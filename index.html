@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ALTERRA CORP — FIELD ANALYSIS TERMINAL</title>
+<script src="lib/react.min.js"></script>
+<script src="lib/react-dom.min.js"></script>
+<script src="lib/babel.min.js"></script>
+<script src="lib/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/tesseract.js@4/dist/tesseract.min.js"></script>
+<style>
+/* Fonts loaded from lib/fonts.css */
+:root{--teal:#00e5cc;--teal-dim:#00a896;--teal-dark:#003d38;--bg:#060d0c;--bg2:#0a1614;--bg3:#0f1f1c;--amber:#ffb300;--red:#ff3d3d;--green:#00ff88;--text:#c8f0ec;--text-dim:#4a8a84;--border:rgba(0,229,204,0.2);--border-bright:rgba(0,229,204,0.6);--scan-line:rgba(0,229,204,0.03)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+body{background:var(--bg);color:var(--text);font-family:'Share Tech Mono',monospace;min-height:100vh;min-height:-webkit-fill-available;overflow-x:hidden;position:relative;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+body::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,var(--scan-line) 2px,var(--scan-line) 4px);pointer-events:none;z-index:1000}
+body::after{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,0.8) 100%);pointer-events:none;z-index:999}
+#root{position:relative;z-index:1}
+.terminal{max-width:900px;margin:0 auto;padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom));min-height:100vh;min-height:-webkit-fill-available}
+
+/* CRASH */
+.crash-screen{position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom));overflow:hidden}
+.crash-flicker{position:absolute;inset:0;pointer-events:none;animation:flicker .15s ease-in-out infinite;background:rgba(255,0,0,.02)}
+@keyframes flicker{0%,100%{opacity:1}50%{opacity:.88}}
+.crash-content{position:relative;z-index:10;width:100%;max-width:580px;text-align:center}
+.crash-alert{background:var(--red);color:#000;font-family:'Orbitron',monospace;font-weight:900;font-size:clamp(10px,3vw,15px);letter-spacing:.3em;padding:8px 20px;margin-bottom:16px;animation:alertBlink .5s ease-in-out infinite}
+@keyframes alertBlink{0%,100%{opacity:1}50%{opacity:.5}}
+.crash-log{text-align:left;font-size:clamp(9px,2vw,11px);line-height:2;margin-bottom:16px;max-height:50vh;overflow:hidden}
+.crash-line{display:flex;gap:10px;animation:cLine .2s ease}
+@keyframes cLine{from{opacity:0;transform:translateX(-4px)}to{opacity:1;transform:none}}
+.crash-line.red{color:var(--red)}.crash-line.amber{color:var(--amber)}.crash-line.white{color:#fff}.crash-line.dim{color:#444}.crash-line.green{color:var(--green)}
+.crash-ts{color:#333;flex-shrink:0;font-size:.85em}
+.crash-big{font-family:'Orbitron',monospace;font-size:clamp(32px,9vw,64px);font-weight:900;letter-spacing:.2em;color:var(--red);animation:gTxt .25s ease-in-out infinite;margin:8px 0}
+@keyframes gTxt{0%,90%,100%{transform:none;text-shadow:0 0 20px var(--red)}92%{transform:translateX(-4px) skewX(-2deg)}95%{transform:translateX(4px) skewX(2deg)}}
+.crash-bar{width:100%;height:5px;background:var(--red);margin:6px 0;animation:cBar .3s ease-in-out infinite}
+@keyframes cBar{0%,100%{opacity:1}50%{opacity:.2}}
+.crash-btn{margin-top:16px;padding:12px 28px;background:transparent;border:2px solid var(--teal);color:var(--teal);font-family:'Orbitron',monospace;font-size:clamp(10px,2.5vw,13px);font-weight:700;letter-spacing:.2em;cursor:pointer;animation:tPulse 1.5s ease-in-out infinite}
+@keyframes tPulse{0%,100%{box-shadow:0 0 0 0 rgba(0,229,204,.4)}50%{box-shadow:0 0 0 8px rgba(0,229,204,0)}}
+
+/* NAME SCREEN */
+.name-screen{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:max(30px,env(safe-area-inset-top)) 20px max(30px,env(safe-area-inset-bottom));overflow-y:auto}
+.name-box{width:100%;max-width:480px;border:1px solid var(--border-bright);background:var(--bg2);padding:30px;position:relative}
+.name-box::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--teal),transparent);animation:scanBar 3s linear infinite}
+@keyframes scanBar{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+.nc{position:absolute;width:14px;height:14px}
+.nc.tl{top:-1px;left:-1px;border-top:2px solid var(--teal);border-left:2px solid var(--teal)}
+.nc.tr{top:-1px;right:-1px;border-top:2px solid var(--teal);border-right:2px solid var(--teal)}
+.nc.bl{bottom:-1px;left:-1px;border-bottom:2px solid var(--teal);border-left:2px solid var(--teal)}
+.nc.br{bottom:-1px;right:-1px;border-bottom:2px solid var(--teal);border-right:2px solid var(--teal)}
+.name-title{font-family:'Orbitron',monospace;font-size:clamp(11px,3vw,16px);font-weight:700;color:var(--teal);letter-spacing:.15em;margin-bottom:6px}
+.name-sub{font-size:clamp(8px,2vw,10px);color:var(--text-dim);letter-spacing:.1em;margin-bottom:24px;line-height:1.8}
+.name-lbl{font-size:clamp(8px,1.8vw,10px);color:var(--text-dim);letter-spacing:.15em;margin-bottom:6px;display:block}
+.name-input{width:100%;background:var(--bg3);border:1px solid var(--teal-dim);color:var(--teal);font-family:'Orbitron',monospace;font-size:max(16px,clamp(14px,4vw,20px));font-weight:700;padding:12px 14px;letter-spacing:.15em;outline:none;text-transform:uppercase;margin-bottom:16px;caret-color:var(--teal)}
+.name-input:focus{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal-dark)}
+.name-input.err{border-color:var(--red);color:var(--red);animation:shake .4s ease}
+@keyframes shake{0%,100%{transform:none}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+.name-err{font-size:clamp(8px,1.8vw,10px);color:var(--red);letter-spacing:.1em;margin-bottom:12px;min-height:16px}
+.name-btn{width:100%;padding:14px;background:transparent;border:2px solid var(--teal);color:var(--teal);font-family:'Orbitron',monospace;font-size:clamp(11px,3vw,14px);font-weight:700;letter-spacing:.2em;cursor:pointer;transition:all .3s}
+.name-btn:active{background:var(--teal);color:var(--bg)}
+.name-manifest{margin-top:20px;padding:12px;background:var(--bg3);border:1px solid var(--border);font-size:clamp(8px,1.8vw,10px);color:var(--text-dim);line-height:2;letter-spacing:.05em}
+.name-manifest span{color:var(--amber)}
+
+/* RETINA */
+.retina-screen{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:9997;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom));overflow-y:auto}
+.retina-title{font-family:'Orbitron',monospace;font-size:clamp(10px,2.5vw,14px);font-weight:700;color:var(--teal);letter-spacing:.2em;margin-bottom:6px;text-align:center}
+.retina-sub{font-size:clamp(8px,1.8vw,10px);color:var(--text-dim);letter-spacing:.1em;margin-bottom:28px;text-align:center}
+.retina-wrap{position:relative;width:min(280px,78vw);height:min(280px,78vw);margin-bottom:20px}
+.retina-cb{position:absolute;width:18px;height:18px}
+.retina-cb.tl{top:0;left:0;border-top:2px solid var(--teal);border-left:2px solid var(--teal)}
+.retina-cb.tr{top:0;right:0;border-top:2px solid var(--teal);border-right:2px solid var(--teal)}
+.retina-cb.bl{bottom:0;left:0;border-bottom:2px solid var(--teal);border-left:2px solid var(--teal)}
+.retina-cb.br{bottom:0;right:0;border-bottom:2px solid var(--teal);border-right:2px solid var(--teal)}
+.retina-eye{position:absolute;inset:0;border-radius:50%;border:2px solid var(--teal-dim);display:flex;align-items:center;justify-content:center;overflow:hidden;transition:border-color .5s}
+.retina-ring{position:absolute;border-radius:50%;border:1px solid var(--teal-dark);animation:rRing linear infinite}
+.rr1{inset:8%;animation-duration:8s}.rr2{inset:16%;animation-duration:6s;animation-direction:reverse}.rr3{inset:24%;animation-duration:11s}
+@keyframes rRing{0%{transform:rotate(0deg);border-top-color:var(--teal)}100%{transform:rotate(360deg);border-top-color:var(--teal)}}
+.retina-iris{width:54%;height:54%;border-radius:50%;border:2px solid var(--teal);display:flex;align-items:center;justify-content:center;position:relative;transition:border-color .5s}
+.retina-pupil{width:34%;height:34%;border-radius:50%;background:var(--bg);border:1px solid var(--teal-dim)}
+.retina-scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--teal),transparent);box-shadow:0 0 12px var(--teal);animation:rScan 1.8s ease-in-out infinite}
+@keyframes rScan{0%{top:10%;opacity:0}10%{opacity:1}90%{opacity:1}100%{top:90%;opacity:0}}
+.retina-tap-hint{position:absolute;bottom:12%;left:50%;transform:translateX(-50%);color:var(--text-dim);font-size:clamp(8px,1.8vw,9px);letter-spacing:.1em;white-space:nowrap;animation:tPulse 2s ease-in-out infinite}
+.retina-side{position:absolute;font-size:clamp(7px,1.5vw,9px);color:var(--text-dim);letter-spacing:.06em;line-height:1.8}
+.retina-side.left{left:-75px;top:50%;transform:translateY(-50%);text-align:right}
+.retina-side.right{right:-75px;top:50%;transform:translateY(-50%)}
+@media(max-width:460px){.retina-side{display:none}}
+.retina-status{font-size:clamp(10px,2.5vw,13px);color:var(--teal);letter-spacing:.15em;text-align:center;min-height:22px;margin-bottom:14px}
+.retina-pbar{width:min(280px,78vw);height:4px;background:var(--bg3);border:1px solid var(--border);overflow:hidden;margin-bottom:18px}
+.retina-pfill{height:100%;transition:width .08s linear}
+.retina-checks{width:min(280px,78vw);font-size:clamp(8px,1.8vw,10px);letter-spacing:.08em;line-height:2.2}
+.retina-check-row{display:flex;justify-content:space-between}
+
+/* BOOT */
+.boot-screen{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom));overflow-y:auto}
+.boot-logo{font-family:'Orbitron',monospace;font-size:clamp(22px,6vw,42px);font-weight:900;color:var(--teal);letter-spacing:.3em;text-align:center;margin-bottom:8px;animation:glow 2s ease-in-out infinite}
+@keyframes glow{0%,100%{text-shadow:0 0 20px var(--teal),0 0 40px var(--teal-dark)}50%{text-shadow:0 0 40px var(--teal),0 0 80px var(--teal-dark)}}
+.boot-sub{font-size:clamp(9px,2vw,12px);color:var(--text-dim);letter-spacing:.2em;text-align:center;margin-bottom:28px}
+.boot-log{width:100%;max-width:520px;font-size:clamp(9px,2vw,11px);color:var(--text-dim);line-height:2;margin-bottom:22px;max-height:50vh;overflow:hidden}
+.boot-line{display:flex;gap:10px;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+.boot-line.ok{color:var(--green)}.boot-line.warn{color:var(--amber)}.boot-line.err{color:var(--red)}
+.boot-pbar{width:100%;max-width:520px;height:4px;background:var(--bg3);border:1px solid var(--border);overflow:hidden;margin-bottom:20px}
+.boot-pfill{height:100%;background:linear-gradient(90deg,var(--teal-dark),var(--teal));transition:width .4s ease}
+.boot-btn{padding:14px 40px;background:transparent;border:2px solid var(--teal);color:var(--teal);font-family:'Orbitron',monospace;font-size:clamp(11px,3vw,14px);font-weight:700;letter-spacing:.2em;cursor:pointer;animation:tPulse 2s ease-in-out infinite}
+
+/* HEADER */
+.header{border:1px solid var(--border-bright);background:var(--bg2);padding:12px 16px;margin-bottom:8px;position:relative;overflow:hidden}
+.header::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--teal),transparent);animation:scanBar 3s linear infinite}
+.header-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.header-title{font-family:'Orbitron',monospace;font-size:clamp(10px,2.5vw,14px);font-weight:900;color:var(--teal);letter-spacing:.15em;line-height:1.4}
+.header-sub{font-size:clamp(8px,1.8vw,10px);color:var(--text-dim);letter-spacing:.1em;margin-top:2px}
+.status-ind{display:flex;align-items:center;gap:6px;font-size:clamp(8px,1.8vw,10px);color:var(--teal-dim)}
+.pdot{width:8px;height:8px;border-radius:50%;animation:pulse 2s ease-in-out infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 6px currentColor}50%{opacity:.3;box-shadow:none}}
+.header-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.stat{text-align:center}
+.stat-lbl{font-size:clamp(7px,1.5vw,9px);color:var(--text-dim);letter-spacing:.08em;display:block}
+.stat-val{font-family:'Orbitron',monospace;font-size:clamp(10px,2.5vw,14px);font-weight:700;color:var(--teal);display:block;margin-top:2px}
+.stat-val.amber{color:var(--amber)}.stat-val.red{color:var(--red)}.stat-val.green{color:var(--green)}
+
+/* MISSION BAR */
+.mission-bar{border:1px solid var(--border);background:var(--bg2);padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;font-size:clamp(8px,1.8vw,10px)}
+.mission-lbl{color:var(--text-dim);letter-spacing:.1em;white-space:nowrap;flex-shrink:0}
+.mission-txt{color:var(--teal);letter-spacing:.05em;flex:1}
+.pbar-wrap{width:120px;height:6px;background:var(--bg3);border:1px solid var(--border);flex-shrink:0;overflow:hidden}
+.pbar-fill{height:100%;background:linear-gradient(90deg,var(--teal-dark),var(--teal));transition:width .8s ease;position:relative}
+.pbar-fill::after{content:'';position:absolute;right:0;top:0;bottom:0;width:4px;background:#fff;opacity:.8}
+
+/* GRID */
+.main-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+@media(max-width:500px){.main-grid{grid-template-columns:1fr}}
+.panel{border:1px solid var(--border);background:var(--bg2);padding:10px 12px}
+.panel-hdr{font-family:'Orbitron',monospace;font-size:clamp(8px,2vw,11px);font-weight:700;color:var(--teal);letter-spacing:.12em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.picon{width:6px;height:6px;background:var(--teal);flex-shrink:0}
+
+/* SCAN */
+.scan-sec{grid-column:1/-1}
+.scan-btn{width:100%;padding:16px;background:transparent;border:2px solid var(--teal);color:var(--teal);font-family:'Orbitron',monospace;font-size:clamp(11px,3vw,16px);font-weight:700;letter-spacing:.2em;cursor:pointer;position:relative;overflow:hidden;transition:all .3s}
+.scan-btn::before{content:'';position:absolute;top:0;left:-100%;right:100%;bottom:0;background:rgba(0,229,204,.1);transition:all .3s}
+.scan-btn:hover::before,.scan-btn:active::before{left:0;right:0}
+.scan-btn.scanning{border-color:var(--amber);color:var(--amber);animation:sPulse 1s ease-in-out infinite}
+@keyframes sPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,179,0,.4)}50%{box-shadow:0 0 0 8px rgba(255,179,0,0)}}
+#qr-reader{width:100%;border:1px solid var(--border)!important;background:var(--bg3)!important;overflow:hidden}
+#qr-reader video{border-radius:0!important}
+#qr-reader__scan_region{background:transparent!important}
+#qr-reader__dashboard{background:var(--bg2)!important;padding:8px!important}
+#qr-reader__dashboard button{background:var(--teal-dark)!important;color:var(--teal)!important;border:1px solid var(--teal)!important;font-family:'Share Tech Mono',monospace!important;padding:6px 12px!important;cursor:pointer!important;font-size:11px!important}
+#qr-reader__dashboard select{background:var(--bg3)!important;color:var(--teal)!important;border:1px solid var(--border)!important;font-family:'Share Tech Mono',monospace!important;font-size:11px!important}
+#qr-reader__status_span{color:var(--text-dim)!important;font-family:'Share Tech Mono',monospace!important;font-size:10px!important}
+.manual-entry{margin-top:8px;display:flex;gap:6px}
+.manual-input{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--teal);font-family:'Share Tech Mono',monospace;font-size:16px;padding:8px 10px;letter-spacing:.1em;outline:none}
+.manual-input:focus{border-color:var(--teal)}
+.manual-input::placeholder{color:var(--text-dim)}
+.manual-btn{padding:8px 14px;background:var(--teal-dark);border:1px solid var(--teal-dim);color:var(--teal);font-family:'Share Tech Mono',monospace;font-size:clamp(9px,2vw,11px);cursor:pointer;letter-spacing:.08em;white-space:nowrap}
+.manual-btn:active{background:var(--teal);color:var(--bg)}
+
+/* LOG */
+.item-log{max-height:180px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--teal-dark) var(--bg)}
+.log-entry{padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;animation:fadeIn .4s ease;cursor:pointer}
+.log-entry:last-child{border-bottom:none}
+.log-id{font-size:clamp(7px,1.5vw,9px);color:var(--text-dim);white-space:nowrap;flex-shrink:0}
+.log-name{font-size:clamp(8px,2vw,11px);color:var(--text);flex:1}
+.log-type{font-size:clamp(7px,1.5vw,9px);padding:2px 6px;border:1px solid;white-space:nowrap;flex-shrink:0}
+.type-POWER{color:var(--amber);border-color:var(--amber)}.type-MEDICAL{color:var(--green);border-color:var(--green)}.type-DEVICE{color:#ff6b9d;border-color:#ff6b9d}.type-CHEMICAL{color:#c77dff;border-color:#c77dff}.type-ASSEMBLY{color:#48cae4;border-color:#48cae4}.type-CORE{color:var(--teal);border-color:var(--teal)}
+.empty-log{color:var(--text-dim);font-size:clamp(9px,2vw,11px);text-align:center;padding:20px 0;letter-spacing:.05em}
+
+/* ITEM DETAIL */
+.item-detail{grid-column:1/-1;border:1px solid var(--border-bright);background:var(--bg2);padding:14px;position:relative;overflow:hidden;animation:revPanel .5s ease}
+@keyframes revPanel{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.item-detail::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--teal),transparent)}
+.id-text{font-size:clamp(8px,1.8vw,10px);color:var(--text-dim);letter-spacing:.15em;margin-bottom:4px}
+.id-name{font-family:'Orbitron',monospace;font-size:clamp(12px,3vw,18px);font-weight:700;color:var(--teal);letter-spacing:.08em;margin-bottom:8px;line-height:1.3}
+.id-badge{display:inline-block;font-size:clamp(8px,1.8vw,10px);padding:3px 10px;border:1px solid;letter-spacing:.12em;margin-bottom:12px}
+.id-div{height:1px;background:var(--border);margin:10px 0}
+.id-slbl{font-size:clamp(7px,1.5vw,9px);color:var(--text-dim);letter-spacing:.15em;margin-bottom:4px}
+.id-desc{font-size:clamp(10px,2.2vw,13px);color:var(--text);line-height:1.6;margin-bottom:10px;font-family:'Exo 2',sans-serif;font-weight:300}
+.id-surv{font-size:clamp(9px,2vw,11px);color:var(--teal-dim);line-height:1.5;font-style:italic}
+.id-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.id-stat{background:var(--bg3);border:1px solid var(--border);padding:6px 8px;text-align:center}
+.id-stat-lbl{font-size:clamp(7px,1.5vw,9px);color:var(--text-dim);display:block;letter-spacing:.08em}
+.id-stat-val{font-family:'Orbitron',monospace;font-size:clamp(9px,2.2vw,12px);color:var(--teal);display:block;margin-top:2px;font-weight:700}
+.voice-btn{margin-top:12px;width:100%;padding:10px;background:transparent;border:1px solid var(--teal-dim);color:var(--teal-dim);font-family:'Share Tech Mono',monospace;font-size:clamp(9px,2vw,11px);letter-spacing:.15em;cursor:pointer;transition:all .3s;display:flex;align-items:center;justify-content:center;gap:8px}
+.voice-btn:hover,.voice-btn:active{border-color:var(--teal);color:var(--teal);background:rgba(0,229,204,.05)}
+.voice-btn.speaking{border-color:var(--amber);color:var(--amber);animation:spk .5s ease-in-out infinite}
+@keyframes spk{0%,100%{opacity:1}50%{opacity:.6}}
+.vbars{display:flex;gap:2px;align-items:center;height:14px}
+.vbar{width:3px;background:currentColor;border-radius:1px;animation:vb .6s ease-in-out infinite}
+.vbar:nth-child(1){height:40%;animation-delay:0s}.vbar:nth-child(2){height:80%;animation-delay:.15s}.vbar:nth-child(3){height:60%;animation-delay:.3s}.vbar:nth-child(4){height:100%;animation-delay:.1s}.vbar:nth-child(5){height:50%;animation-delay:.25s}
+@keyframes vb{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
+
+/* MISC */
+.notif{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--teal);color:var(--teal);padding:10px 20px;font-size:clamp(9px,2vw,11px);letter-spacing:.1em;z-index:2000;animation:nSlide .3s ease;white-space:nowrap;max-width:90vw;text-align:center}
+.notif.err{border-color:var(--red);color:var(--red)}
+@keyframes nSlide{from{transform:translateX(-50%) translateY(-20px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+.close-btn{position:absolute;top:10px;right:10px;background:transparent;border:1px solid var(--border);color:var(--text-dim);font-family:'Share Tech Mono',monospace;font-size:10px;padding:4px 8px;cursor:pointer;letter-spacing:.1em}
+.close-btn:hover{border-color:var(--red);color:var(--red)}
+.cdec{position:absolute;width:12px;height:12px}
+.cdec.tl{top:-1px;left:-1px;border-top:2px solid var(--teal);border-left:2px solid var(--teal)}
+.cdec.tr{top:-1px;right:-1px;border-top:2px solid var(--teal);border-right:2px solid var(--teal)}
+.cdec.bl{bottom:-1px;left:-1px;border-bottom:2px solid var(--teal);border-left:2px solid var(--teal)}
+.cdec.br{bottom:-1px;right:-1px;border-bottom:2px solid var(--teal);border-right:2px solid var(--teal)}
+.unk-id{font-family:'Orbitron',monospace;font-size:clamp(14px,4vw,22px);font-weight:900;color:var(--red);letter-spacing:.2em;margin-bottom:8px}
+.unk-txt{font-size:clamp(9px,2vw,11px);color:var(--text-dim);letter-spacing:.08em;line-height:1.8}
+.footer{border:1px solid var(--border);background:var(--bg2);padding:8px 12px;margin-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:clamp(7px,1.5vw,9px);color:var(--text-dim);letter-spacing:.1em}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--teal-dark)}
+
+    @keyframes shakeScreen{0%,100%{transform:none}25%{transform:translateX(-12px) rotate(-.4deg)}75%{transform:translateX(12px) rotate(.4deg)}}
+    @keyframes glitchTxt{0%,90%,100%{transform:none}92%{transform:translateX(-4px) skewX(-2deg)}95%{transform:translateX(4px) skewX(2deg)}}
+    .crash-input{width:100%;background:#0a0000;border:2px solid var(--red);color:var(--red);font-family:'Orbitron',monospace;font-size:clamp(18px,5vw,28px);font-weight:700;padding:12px;letter-spacing:.3em;outline:none;text-align:center;text-transform:uppercase;caret-color:var(--red);margin-bottom:8px}
+    .crash-input.err{animation:shake .4s ease}
+    .crash-input:focus{box-shadow:0 0 0 2px rgba(255,61,61,.3)}
+    @keyframes shake{0%,100%{transform:none}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
+    .crash-hint{font-size:clamp(8px,1.8vw,10px);color:#444;letter-spacing:.1em;margin-bottom:12px;text-align:center}
+    .crash-err-msg{font-size:clamp(8px,1.8vw,10px);color:var(--red);letter-spacing:.1em;text-align:center;min-height:16px;margin-bottom:8px}
+    .teal{color:var(--teal)}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const ITEMS = {
+  "ALT-MGC-001":{id:"ALT-MGC-001",name:"GALVANIC POWER CELL",type:"POWER",voltage:"2.7V OCV",chemistry:"Mg|Cu",condition:"NOMINAL",description:"Alterra Corp galvanic power cell. Magnesium anode, copper cathode, saline electrolyte. Open circuit voltage: 2.7 volts. Shelf life dry: indefinite. This cell has been waiting since it was sealed. It is ready.",survivalUse:"Inject NaCl electrolyte solution via syringe to activate. Connect multiple cells in series for higher voltage. Two cells: 5.4V. Three cells: 8.1V. Class: NON-TOXIC CLASS-0."},
+  "ALT-BP2S-001":{id:"ALT-BP2S-001",name:"GALVANIC BATTERY PACK 2S",type:"POWER",voltage:"5.4V",chemistry:"Mg|Cu x2",condition:"NOMINAL",description:"Galvanic battery pack, series configuration. Two Mg|Cu cells in series. Output: 5.4 volts. Alterra Corp field-rated. Sufficient for low-power devices and indicator systems. Insufficient alone for beacon activation.",survivalUse:"Activate with NaCl electrolyte. 5.4V output. Combine with additional cells or packs for beacon threshold of 13.5V. Class: NON-TOXIC CLASS-0."},
+  "ALT-BP3S-001":{id:"ALT-BP3S-001",name:"GALVANIC BATTERY PACK 3S",type:"POWER",voltage:"8.1V",chemistry:"Mg|Cu x3",condition:"NOMINAL",description:"Galvanic battery pack, series configuration. Three Mg|Cu cells in series. Output: 8.1 volts. Approaching beacon threshold. Close. Not sufficient alone.",survivalUse:"Activate with NaCl electrolyte. 8.1V output. Add one more cell or combine with another pack to reach 13.5V beacon threshold. Class: NON-TOXIC CLASS-0."},
+  "ALT-BP5S2P-001":{id:"ALT-BP5S2P-001",name:"GALVANIC BATTERY PACK 5S2P",type:"POWER",voltage:"13.5V",chemistry:"Mg|Cu x10",condition:"NOMINAL",description:"Galvanic battery pack, series-parallel configuration. Five cells in series, two strings in parallel. Output: 13.5 volts at doubled current capacity. This is the highest power configuration in the cache. The beacon requires 13.5 volts. This pack provides exactly that.",survivalUse:"Activate with NaCl electrolyte. 13.5V output — beacon activation threshold met. This pack alone can power the distress beacon. Locate ALT-BCN-001 and connect. Class: NON-TOXIC CLASS-0."},
+  "ALT-GR-1S4P-001":{id:"ALT-GR-1S4P-001",name:"GALVANIC REACTOR TYPE-IV",type:"CORE",voltage:"2.7V / 480mA",chemistry:"Mg|Cu 1S4P",condition:"STANDBY",description:"Immersion-class galvanic reactor. Four magnesium rods, four copper rods, 1S4P array configuration. Output: 2.7 volts at 480 milliamps — four times the current of a single cell. Requires immersion in electrolyte medium to activate. The chromatic green indicator solution shows activation state. Currently standby.",survivalUse:"Immerse in NaCl(aq) solution or inject electrolyte to activate. High current output suitable for powering multiple devices simultaneously. Reactor fluid: chromatic green NaCl indicator solution. Monitor voltmeter for output confirmation."},
+  "ALT-ESP-001":{id:"ALT-ESP-001",name:"ELECTROLYTE SPECIMEN",type:"CHEMICAL",voltage:"N/A",chemistry:"NaCl(aq)",condition:"SEALED",description:"Electrolyte specimen vessel. NaCl aqueous saline solution with chromatic green visual indicator. The colour indicates ionic activity — green confirms electrolyte is viable and uncontaminated. Used for reactor immersion and visual confirmation of cell activation.",survivalUse:"Pour into reactor vessel for immersion activation. Use as electrolyte injection source via syringe for individual cells. Green colouration is indicator dye — non-toxic, water-soluble. Hazard: CLASS-0 NON-TOXIC."},
+  "ALT-NCS-001":{id:"ALT-NCS-001",name:"NaCl DRY CRYSTALS",type:"CHEMICAL",voltage:"N/A",chemistry:"NaCl",condition:"SEALED",description:"Sodium chloride dry crystal electrolyte supply. Form: dry crystalline. Dissolve in water before use. Activation: add H2O at ratio of approximately 35g per litre for optimal ionic conductivity. The oldest electrolyte known. It has never stopped working.",survivalUse:"Dissolve in clean water to create saline electrolyte. Use to activate any Mg|Cu galvanic cell or battery pack. Can also be used for wound irrigation if dissolved to 0.9% concentration — standard medical saline. Class: NON-TOXIC CLASS-0."},
+  "ALT-BCN-001":{id:"ALT-BCN-001",name:"EMERGENCY BEACON — LIFEPOD-5",type:"DEVICE",voltage:"13.5V REQ",chemistry:"N/A",condition:"OFFLINE",description:"TYPE-IV distress signal emitter. Unit designation: LIFEPOD-5. Frequency: 406 MHz. Range: 500 metres. Currently offline — insufficient power. Required input: 13.5 volts DC. When activated this unit will broadcast on the Alterra Corp emergency network and all maritime distress frequencies. Someone will hear it.",survivalUse:"ACTIVATION PROTOCOL: Connect ALT-BP5S2P-001 battery pack output to beacon input terminals. Or connect sufficient cells in series to reach 13.5V. Do not activate unless ready to commit to rescue request. EMERGENCY ACTIVATION ONLY — DO NOT TEST."},
+  "ALT-IDK-001":{id:"ALT-IDK-001",name:"IODINE DECON KIT",type:"CHEMICAL",voltage:"N/A",chemistry:"I2(aq)",condition:"SEALED",description:"Iodine decontamination kit. Three spray bottles. Agent: iodine aqueous solution. Use: topical surface decontamination and water purification. Contact time: 60 seconds for surface application. The amber colour indicates viable iodine concentration. If the solution has lost colour, discard — activity is depleted.",survivalUse:"Surface decontamination: apply and wait 60 seconds. Water purification: 5 drops per litre, wait 10 minutes. Also functions as cell electrolyte for Mg|Cu cells — lower performance than saline but functional. OXIDISING AGENT — EXTERNAL USE ONLY — AVOID EYES."},
+  "ALT-PDK-001":{id:"ALT-PDK-001",name:"OXIDANT DECON KIT",type:"CHEMICAL",voltage:"N/A",chemistry:"KMnO4",condition:"SEALED",description:"Potassium permanganate oxidant decontamination kit. Form: tablet. Dilution: 1 tablet per 1 litre water for decontamination use. The deep purple colour is not cosmetic. It indicates oxidative potential sufficient to kill biological contaminants. It will also stain skin purple on contact. This is a feature, not a flaw — it marks contaminated surfaces.",survivalUse:"Water decontamination: 1 tablet per 1L, wait 10 minutes. Fire starting: combine with glycerol — immediate exothermic ignition. Cell electrolyte: dissolve and use as high-output activator for Mg|Cu cells — increases voltage versus saline. STRONG OXIDISER — DILUTE BEFORE USE — STAINS SKIN PURPLE."},
+  "ALT-PSC-001":{id:"ALT-PSC-001",name:"GALVANIC ENERGY SUPPLIES — CASE ALPHA",type:"ASSEMBLY",voltage:"N/A",chemistry:"N/A",condition:"NOMINAL",description:"Alterra Corp field deployment case — designation ALPHA. Contents: galvanic cell array, battery packs in 2S, 3S, and 5S2P configurations, NaCl dry crystal electrolyte packs, electrolyte injection syringe kit. Everything needed to establish emergency power from first principles. Authorised field deployment only.",survivalUse:"Full power establishment protocol: dissolve NaCl crystals in water, load syringe, activate cells and packs in order of required voltage. Start with lowest voltage requirements and scale up. Final configuration should achieve 13.5V for beacon activation. ALTERRA CORP — FIELD DEPLOYMENT — AUTHORISED USE ONLY."},
+  "ALT-FCC-001":{id:"ALT-FCC-001",name:"FIELD OPERATIONS CACHE — CASE BETA",type:"ASSEMBLY",voltage:"N/A",chemistry:"N/A",condition:"NOMINAL",description:"Alterra Corp field deployment case — designation BETA. Contents: Galvanic Reactor Type-IV 1S4P, electrolyte specimen chromatic green, KI potassium iodide thyroid protection tablets 130mg, emergency transponder LIFEPOD-5 at 406 MHz. This case contains the beacon. This case is why you are looking for the cases.",survivalUse:"Priority items: locate ALT-BCN-001 beacon and ALT-GR-1S4P-001 reactor. Combine with Case Alpha power supply for full system capability. KI tablets: administer on radiation alert, 130mg adult dose. ALTERRA CORP — FIELD DEPLOYMENT — CLASSIFICATION SENSITIVE."},
+  "ALT-ADT-001":{id:"ALT-ADT-001",name:"EMERGENCY AUDIO DISTRESS TRANSMITTER",type:"DEVICE",voltage:"1.5V",chemistry:"N/A",condition:"ACTIVE",description:"Solid-state audio distress transmitter. Single-channel record and loop playback. A transmission has been pre-loaded onto this unit. It was recorded before the Aurora was lost. Press play. Power: one galvanic cell. Range: sufficient for close-range signalling and crew coordination.",survivalUse:"Connect any single activated galvanic cell to power terminals. Press play to broadcast stored transmission. The message will loop. Use for crew coordination, signalling, or to confirm you are not alone out here."},
+};
+
+const MISSION_STAGES=[
+  {id:0,name:"ASSESS",description:"Scan items to catalogue Aurora cache contents. Start with the power cells.",condition:(s,items)=>{const t=new Set(Object.keys(s).map(id=>items[id]?.type).filter(Boolean));return t.has('POWER')&&t.has('CHEMICAL')}},
+  {id:1,name:"CONFIGURE",description:"Locate the 5S2P battery pack — it provides the 13.5V required to activate the beacon.",condition:(s)=>s['ALT-BP5S2P-001']},
+  {id:2,name:"LOCATE BEACON",description:"Find the emergency beacon ALT-BCN-001 in Case Beta. Also locate the audio transmitter.",condition:(s)=>s['ALT-BCN-001']&&s['ALT-ADT-001']},
+  {id:3,name:"TRANSMIT",description:"Connect 5S2P pack to beacon. 13.5V activates the distress signal on 406 MHz.",condition:(s)=>s['ALT-BCN-001']&&s['ALT-BP5S2P-001']&&s['ALT-GR-1S4P-001']&&s['ALT-ADT-001']},
+  {id:4,name:"COMPLETE",description:"Beacon active. Broadcasting on 406 MHz. Alterra Corp rescue protocol initiated.",condition:()=>false},
+];
+
+const TC={POWER:'#ffb300',MEDICAL:'#00ff88',DEVICE:'#ff6b9d',CHEMICAL:'#c77dff',ASSEMBLY:'#48cae4',CORE:'#00e5cc'};
+
+const getScanned=()=>{try{return JSON.parse(localStorage.getItem('psv7_scanned')||'{}')}catch{return{}}};
+const saveScanned=s=>localStorage.setItem('psv7_scanned',JSON.stringify(s));
+const getOnboarded=()=>localStorage.getItem('psv7_onboarded')==='1';
+const setOnboarded=()=>localStorage.setItem('psv7_onboarded','1');
+const getOperator=()=>localStorage.getItem('psv7_operator')||'';
+const setOperatorLS=n=>localStorage.setItem('psv7_operator',n);
+const getMissionStage=s=>{for(let i=MISSION_STAGES.length-1;i>=0;i--)if(MISSION_STAGES[i].condition(s,ITEMS))return i+1;return 0};
+const getProgress=s=>Math.round((Object.keys(s).length/Object.keys(ITEMS).length)*100);
+
+// ── AUDIO ENGINE ──
+// All audio uses HTML Audio elements, not Web Audio API synthesis.
+// audioCtxUnlocked is set true on first user tap which unlocks autoplay on Android/Silk.
+
+let audioUnlocked = false;
+let alarmAudio = null;
+let currentPDA = null;
+
+const unlockAudio = () => {
+  if(audioUnlocked) return;
+  audioUnlocked = true;
+  // Prime the alarm audio object
+  alarmAudio = new Audio('sounds/alarm-loop.mp3');
+  alarmAudio.loop = true;
+  alarmAudio.volume = 0.7;
+};
+
+const playAlarmLoop = () => {
+  if(!alarmAudio) return;
+  alarmAudio.currentTime = 0;
+  alarmAudio.play().catch(()=>{});
+};
+
+const stopAlarmLoop = () => {
+  if(!alarmAudio) return;
+  alarmAudio.pause();
+  alarmAudio.currentTime = 0;
+};
+
+// Play a one-shot sound file
+const playSound = (file, volume=1.0, delay=0) => {
+  setTimeout(()=>{
+    const a = new Audio(file);
+    a.volume = volume;
+    a.play().catch(()=>{});
+  }, delay);
+};
+
+// Stop current PDA audio
+const stopPDA = () => {
+  if(currentPDA){ currentPDA.pause(); currentPDA.currentTime=0; currentPDA=null; }
+  if(window.speechSynthesis) window.speechSynthesis.cancel();
+};
+
+// Play item PDA audio — MP3 first, TTS fallback
+const ITEM_AUDIO = {
+  'ALT-MGC-001':     'sounds/pda-mgc.mp3',
+  'ALT-BP2S-001':    'sounds/pda-bp2s.mp3',
+  'ALT-BP3S-001':    'sounds/pda-bp3s.mp3',
+  'ALT-BP5S2P-001':  'sounds/pda-bp5s2p.mp3',
+  'ALT-GR-1S4P-001': 'sounds/pda-reactor.mp3',
+  'ALT-ESP-001':     'sounds/pda-electrolyte.mp3',
+  'ALT-NCS-001':     'sounds/pda-nacl.mp3',
+  'ALT-BCN-001':     'sounds/pda-beacon.mp3',
+  'ALT-IDK-001':     'sounds/pda-iodine.mp3',
+  'ALT-PDK-001':     'sounds/pda-permanganate.mp3',
+  'ALT-PSC-001':     'sounds/pda-case-alpha.mp3',
+  'ALT-FCC-001':     'sounds/pda-case-beta.mp3',
+  'ALT-ADT-001':     'sounds/pda-audio-tx.mp3',
+};
+
+const playItemAudio = (itemId, text, onStart, onEnd) => {
+  stopPDA();
+  const file = ITEM_AUDIO[itemId];
+  if(file){
+    const a = new Audio(file);
+    currentPDA = a;
+    a.volume = 1.0;
+    a.onplay = () => { onStart&&onStart(); };
+    a.onended = () => { currentPDA=null; onEnd&&onEnd(); };
+    a.onerror = () => { currentPDA=null; speakTTS(text,onStart,onEnd); };
+    a.play().catch(()=>speakTTS(text,onStart,onEnd));
+  } else {
+    speakTTS(text,onStart,onEnd);
+  }
+};
+
+const speakTTS=(text,onStart,onEnd)=>{
+  if(!window.speechSynthesis){onEnd&&onEnd();return;}
+  window.speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.rate=0.82;u.pitch=0.88;u.volume=1;
+  const vs=window.speechSynthesis.getVoices();
+  const pick=vs.find(v=>v.name.includes('Samantha')||v.name.includes('Karen')||v.name.includes('Moira')||(v.lang==='en-GB'&&v.localService)||(v.lang==='en-US'&&v.localService));
+  if(pick)u.voice=pick;
+  u.onstart=onStart;u.onend=onEnd;u.onerror=onEnd;
+  window.speechSynthesis.speak(u);
+};
+
+const speak=speakTTS;
+const stopAudio=stopPDA;
+const playCrashAudio=(file,delay=0)=>playSound(file,1.0,delay);
+
+// ── CRASH SCREEN ──
+const CRASH=[
+  {dur:1000,lines:[
+    {t:100,text:"AURORA // ALTERRA CORP DEEP SURVEY — ALL SYSTEMS NOMINAL",cls:"dim"},
+    {t:400,text:"DESCENT IN PROGRESS — DEPTH: 4,200M",cls:"dim"},
+    {t:700,text:"ALIEN SPECIMEN RECOVERY CONFIRMED — SECURE CONTAINMENT ACTIVE",cls:"green"},
+  ]},
+  {dur:2200,lines:[
+    {t:0,text:"WARNING — NAVIGATION ARRAY — SIGNAL LOST",cls:"amber"},
+    {t:400,text:"ENGINEERING DIAGNOSTIC COMPLETE — NO FAULT DETECTED",cls:"dim"},
+    {t:800,text:"WARNING — NAVIGATION ARRAY — SIGNAL LOST (REPEAT)",cls:"amber"},
+    {t:1100,text:"WARNING — DECK 3 LIFE SUPPORT ANOMALY",cls:"amber"},
+    {t:1500,text:"CREW LOG — RYLEY ROBINSON: 'something is wrong down here'",cls:"white"},
+    {t:1900,text:"WARNING — COMMS ARRAY — PARTIAL SIGNAL DEGRADATION",cls:"amber"},
+  ]},
+  {dur:2500,lines:[
+    {t:0,text:"CRITICAL — NAVIGATION OFFLINE",cls:"red"},
+    {t:300,text:"CRITICAL — COMMS ARRAY OFFLINE",cls:"red"},
+    {t:600,text:"CAPTAIN HOLLISTER: 'all hands — brace for impact'",cls:"white"},
+    {t:1000,text:"CRITICAL — LIFE SUPPORT OFFLINE",cls:"red"},
+    {t:1300,text:"CAPTAIN HOLLISTER: 'deploy all lifepods — evacuate now'",cls:"white"},
+    {t:1700,text:"CRITICAL — PRIMARY POWER FAILING",cls:"red"},
+    {t:2100,text:"LIFEPOD AUTO-EJECTION SEQUENCE INITIATED",cls:"amber"},
+  ]},
+  {dur:2200,lines:[
+    {t:0,text:"LIFEPOD-1 EJECTED  OK",cls:"green"},
+    {t:150,text:"LIFEPOD-2 EJECTED  OK",cls:"green"},
+    {t:300,text:"LIFEPOD-3 EJECTED  OK",cls:"green"},
+    {t:450,text:"LIFEPOD-4 EJECTED  OK",cls:"green"},
+    {t:600,text:"LIFEPOD-5 EJECTED  OK",cls:"green"},
+    {t:750,text:"LIFEPOD-6 EJECTED  OK",cls:"green"},
+    {t:900,text:"LIFEPOD-7 EJECTED  OK",cls:"green"},
+    {t:1050,text:"LIFEPOD-8 EJECTED  OK",cls:"green"},
+    {t:1200,text:"LIFEPOD-9 THROUGH 17 EJECTED  OK",cls:"green"},
+    {t:1500,text:"AURORA TRANSPONDER — SIGNAL LOST",cls:"red"},
+    {t:1900,text:"LAST KNOWN POSITION: 4546.2°N / 1323.4°E — 4546B",cls:"dim"},
+  ]},
+];
+
+// ── INTERACTIVE CRASH SEQUENCE ──
+// Each step requires the user to actively respond before proceeding
+
+const EMERGENCY_STEPS = [
+  {
+    id: 'boot',
+    bg: '#000814',
+    alarm: false,
+    log: [
+      {t:800,  text:'AURORA // ALTERRA CORP DEEP SURVEY VESSEL', cls:'dim'},
+      {t:2500, text:'ALL SYSTEMS NOMINAL — DESCENT IN PROGRESS — PLANET 4546B', cls:'green'},
+      {t:4500, text:'CREW COMPLEMENT: 148 — ALL STATIONS MANNED', cls:'dim'},
+      {t:6500, text:'ESTIMATED SURFACE ARRIVAL: 06:00 SHIP TIME', cls:'dim'},
+    ],
+    wait: 8500,
+    action: null,
+  },
+  {
+    id: 'warning',
+    bg: '#060401',
+    alarm: false,
+    // audio: crash-warning.mp3 = 15.3s — lines spread across 13s
+    log: [
+      {t:800,  text:'WARNING — NAVIGATION ARRAY SIGNAL LOST', cls:'amber'},
+      {t:3500, text:'WARNING — DECK 3 LIFE SUPPORT ANOMALY DETECTED', cls:'amber'},
+      {t:6000, text:'CREW LOG — FARNELL M: "something is very wrong down here"', cls:'white'},
+      {t:9000, text:'WARNING — COMMS ARRAY PARTIAL DEGRADATION', cls:'amber'},
+      {t:12000,text:'ENGINEERING: NO FAULT DETECTED — CAUSE UNKNOWN', cls:'dim'},
+    ],
+    wait: null,
+    action: {
+      type: 'button',
+      label: 'ACKNOWLEDGE WARNINGS',
+      sublabel: 'Confirm receipt — Deck 3 crew member',
+      color: 'var(--amber)',
+    }
+  },
+  {
+    id: 'cascade',
+    bg: '#0a0000',
+    alarm: true,
+    // audio: crash-critical.mp3 = 22.1s — lines spread across 20s
+    log: [
+      {t:800,  text:'CRITICAL — NAVIGATION OFFLINE', cls:'red'},
+      {t:3500, text:'CRITICAL — COMMS ARRAY OFFLINE', cls:'red'},
+      {t:7000, text:'CAPTAIN HOLLISTER: "all hands — brace for impact"', cls:'white'},
+      {t:11000,text:'CRITICAL — DECK 3 LIFE SUPPORT OFFLINE', cls:'red'},
+      {t:15000,text:'CRITICAL — PRIMARY POWER FAILING', cls:'red'},
+      {t:19000,text:'CAPTAIN HOLLISTER: "deploy all lifepods — evacuate NOW"', cls:'white'},
+    ],
+    wait: null,
+    action: {
+      type: 'button',
+      label: 'PROCEED TO LIFEPOD BAY',
+      sublabel: 'Deck 3 — Emergency station: Lifepod-1',
+      color: 'var(--red)',
+    }
+  },
+  {
+    id: 'lifepod',
+    bg: '#0a0000',
+    alarm: true,
+    log: [
+      {t:500,  text:'LIFEPOD-1 — EMERGENCY STATION REACHED', cls:'green'},
+      {t:2000, text:'CREW MEMBER FARNELL M — BOARDING CONFIRMED', cls:'green'},
+      {t:4000, text:'EMERGENCY SURVIVAL CACHE DETECTED — BAY STORAGE', cls:'amber'},
+      {t:6500, text:'CACHE DESIGNATION: ALT-PSC-001 / ALT-FCC-001', cls:'amber'},
+      {t:9000, text:'LOADING CACHE INTO LIFEPOD-1 STORAGE COMPARTMENT...', cls:'dim'},
+    ],
+    wait: null,
+    action: {
+      type: 'button',
+      label: 'LOAD CACHE — SEAL HATCH',
+      sublabel: 'Secure emergency supplies before ejection',
+      color: 'var(--amber)',
+    }
+  },
+  {
+    id: 'eject',
+    bg: '#0a0000',
+    alarm: true,
+    // audio: crash-eject.mp3 = 23.2s — lines spread across 21s
+    log: [
+      {t:500,  text:'HATCH SEALED — LIFEPOD-1 READY FOR EJECTION', cls:'green'},
+      {t:3000, text:'EJECTING: LIFEPOD-1... OK', cls:'green'},
+      {t:6000, text:'EJECTING: LIFEPOD-2... OK', cls:'green'},
+      {t:10000,text:'EJECTING: LIFEPOD-3... FAULT — EJECTION FAILED', cls:'red'},
+      {t:13000,text:'EJECTING: LIFEPOD-4... FAULT — EJECTION FAILED', cls:'red'},
+      {t:16000,text:'LIFEPODS 3 THROUGH 17 — EJECTION SYSTEM DAMAGED', cls:'red'},
+      {t:20000,text:'WARNING — LIFEPOD-1 SEPARATION IN 3 SECONDS', cls:'amber'},
+    ],
+    wait: null,
+    action: {
+      type: 'button',
+      label: 'INITIATE SEPARATION',
+      sublabel: 'Manual override — eject Lifepod-1 now',
+      color: 'var(--red)',
+    }
+  },
+  {
+    id: 'impact',
+    bg: '#0a0000',
+    alarm: false,
+    log: [],
+    wait: 5000,
+    action: null,
+    isImpact: true,
+  },
+  {
+    id: 'recovery',
+    bg: '#060d0c',
+    alarm: false,
+    // audio: crash-recovery.mp3 = 15.9s — lines spread across 14s
+    log: [
+      {t:1000, text:'AURORA TRANSPONDER — SIGNAL LOST', cls:'red'},
+      {t:3500, text:'LIFEPOD-1 — SURFACE IMPACT — STRUCTURAL INTEGRITY NOMINAL', cls:'green'},
+      {t:6500, text:'LOCATION: PLANET 4546B — OCEAN SURFACE', cls:'dim'},
+      {t:9500, text:'EMERGENCY CACHE DETECTED IN STORAGE COMPARTMENT', cls:'amber'},
+      {t:12000,text:'ALTERRA FIELD TERMINAL INITIALISING...', cls:'teal'},
+      {t:14500,text:'CREW IDENTIFICATION REQUIRED TO ACCESS CACHE', cls:'teal'},
+    ],
+    wait: null,
+    action: {
+      type: 'button',
+      label: 'INITIALISE TERMINAL',
+      sublabel: 'Begin crew identification sequence',
+      color: 'var(--teal)',
+    }
+  },
+];
+
+function CrashScreen({onComplete}){
+  const[stepIdx,setStepIdx]=useState(-1); // -1 = audio gate
+  const[lines,setLines]=useState([]);
+  const[showAction,setShowAction]=useState(false);
+  const[showImpact,setShowImpact]=useState(false);
+  const[shake,setShake]=useState(false);
+  const[codeInput,setCodeInput]=useState('');
+  const[codeError,setCodeError]=useState(false);
+  const[inputErr,setInputErr]=useState(false);
+  const autoRef=useRef(null);
+
+  const stopAlarm=()=>stopAlarmLoop();
+  const startAlarm=()=>playAlarmLoop();
+
+  const runStep=(idx)=>{
+    if(idx>=EMERGENCY_STEPS.length){onComplete();return;}
+    const step=EMERGENCY_STEPS[idx];
+    setStepIdx(idx);
+    setLines([]);
+    setShowAction(false);
+    setCodeInput('');
+    setCodeError(false);
+    stopAlarm();
+    if(step.alarm) setTimeout(()=>startAlarm(),300);
+
+    if(step.isImpact){
+      stopAlarm();
+      setTimeout(()=>{setShake(true);setTimeout(()=>setShake(false),1200)},100);
+      setTimeout(()=>{setShowImpact(true);setTimeout(()=>setShowImpact(false),900)},100);
+      // Impact sounds — layered
+      playSound('sounds/impact-explosion.mp3', 1.0, 100);
+      playSound('sounds/impact-drop.mp3', 0.8, 300);
+      playSound('sounds/ship-roar.mp3', 0.5, 600);
+      // Post-impact siren
+      playSound('sounds/siren.mp3', 0.6, 1800);
+      autoRef.current=setTimeout(()=>runStep(idx+1),step.wait);
+      return;
+    }
+
+    // ── Play crash audio at the right moments ──
+    if(step.id==='boot'){
+      playSound('sounds/engine-startup.mp3', 0.4, 200);
+    }
+    if(step.id==='warning'){
+      playCrashAudio('sounds/crash-warning.mp3', 800);
+      playSound('sounds/siren.mp3', 0.3, 1500);
+    }
+    if(step.id==='cascade'){
+      playCrashAudio('sounds/crash-critical.mp3', 800);
+    }
+    if(step.id==='lifepod'){
+      // Tense atmosphere while boarding
+      playSound('sounds/siren.mp3', 0.25, 200);
+    }
+    if(step.id==='eject'){
+      playCrashAudio('sounds/crash-eject.mp3', 200);
+      playSound('sounds/blast-off.mp3', 0.5, 700);
+    }
+    if(step.id==='recovery'){
+      playCrashAudio('sounds/crash-recovery.mp3', 800);
+    }
+
+    // Show log lines
+    step.log.forEach(({t:d,text,cls})=>{
+      setTimeout(()=>setLines(prev=>[...prev,{text,cls}]),d);
+    });
+
+    // Show action or auto advance
+    if(step.action){
+      const maxT=step.log.length?Math.max(...step.log.map(l=>l.t)):0;
+      setTimeout(()=>setShowAction(true), maxT+600);
+    } else if(step.wait){
+      const maxT=step.log.length?Math.max(...step.log.map(l=>l.t)):0;
+      autoRef.current=setTimeout(()=>runStep(idx+1), Math.max(step.wait, maxT+400));
+    }
+  };
+
+  const handleAction=()=>{
+    const step=EMERGENCY_STEPS[stepIdx];
+    if(!step||!step.action)return;
+    if(step.action.type==='code'){
+      if(codeInput.trim()===step.action.code){
+        runStep(stepIdx+1);
+      } else {
+        setInputErr(true);
+        setCodeError(true);
+        setTimeout(()=>setInputErr(false),500);
+        playSound("sounds/siren.mp3", 0.4);
+      }
+      return;
+    }
+    runStep(stepIdx+1);
+  };
+
+  const startAudio=()=>{
+    unlockAudio();
+    runStep(0);
+  };
+
+  useEffect(()=>()=>{
+    stopAlarm();
+    clearTimeout(autoRef.current);
+  },[]);
+
+  const step=EMERGENCY_STEPS[stepIdx]||{};
+  const bgMap={boot:'#000814',warning:'#060401',cascade:'#0a0000',eject:'#0a0000',impact:'#0a0000',recovery:'#060d0c'};
+  const bg=bgMap[step.id]||'#000';
+
+  // ── AUDIO GATE ──
+  if(stepIdx===-1){
+    return(
+      <div className="crash-screen" style={{background:'#000814',cursor:'pointer'}} onClick={startAudio}>
+        <div className="crash-flicker"/>
+        <div className="crash-content" style={{textAlign:'center'}}>
+          <div style={{fontFamily:'Orbitron,monospace',fontSize:'clamp(20px,6vw,40px)',fontWeight:900,color:'var(--teal)',letterSpacing:'.25em',marginBottom:'8px'}}>
+            ALTERRA CORP
+          </div>
+          <div style={{fontFamily:'Orbitron,monospace',fontSize:'clamp(10px,2.5vw,14px)',fontWeight:700,color:'#444',letterSpacing:'.3em',marginBottom:'30px'}}>
+            AURORA — DEEP SURVEY VESSEL
+          </div>
+          <div style={{color:'var(--text-dim)',fontSize:'clamp(9px,2vw,11px)',letterSpacing:'.12em',marginBottom:'28px',lineHeight:2.0}}>
+            VESSEL LOG — AURORA<br/>
+            ALTERRA CORP DEEP SURVEY — PLANET 4546B<br/>
+            STATUS: UNKNOWN<br/>
+            AUDIO ENABLED FOR FULL EXPERIENCE
+          </div>
+          <button className="crash-btn" style={{borderColor:'var(--teal)',color:'var(--teal)'}}>
+            TAP TO BEGIN
+          </button>
+          <div style={{marginTop:'14px',fontSize:'clamp(7px,1.5vw,9px)',color:'#222',letterSpacing:'.1em'}}>
+            ENABLE DEVICE AUDIO BEFORE PROCEEDING
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return(
+    <div className="crash-screen" style={{background:bg,transition:'background .8s ease',animation:shake?'shakeScreen .12s ease-in-out 8':'none'}}>
+
+      <div className="crash-flicker"/>
+      {showImpact&&<div style={{position:'absolute',inset:0,background:'rgba(255,40,40,.5)',zIndex:20,pointerEvents:'none'}}/>}
+
+      <div className="crash-content">
+        {/* Alert banner */}
+        {(step.id==='cascade'||step.id==='lifepod'||step.id==='eject')&&(
+          <div className="crash-alert">HULL BREACH IMMINENT — EMERGENCY PROTOCOL ACTIVE</div>
+        )}
+
+        {/* Impact screen */}
+        {step.isImpact&&(
+          <div style={{textAlign:'center'}}>
+            <div className="crash-big">IMPACT</div>
+            <div className="crash-bar"/>
+            <div style={{color:'#333',fontSize:'clamp(9px,2vw,11px)',letterSpacing:'.15em',marginTop:'16px'}}>
+              BRACING FOR COLLISION...
+            </div>
+          </div>
+        )}
+
+        {/* Log */}
+        {!step.isImpact&&(
+          <div className="crash-log">
+            {lines.map((l,i)=>(
+              <div key={i} className={`crash-line ${l.cls}`}>
+                <span className="crash-ts">[{String(i).padStart(2,'0')}]</span>
+                <span>{l.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Action area */}
+        {showAction&&step.action&&(
+          <div style={{marginTop:'16px',animation:'fadeIn .4s ease'}}>
+            <div style={{height:'1px',background:'rgba(255,255,255,.1)',marginBottom:'16px'}}/>
+
+            {step.action.type==='code'&&(
+              <>
+                <div style={{fontFamily:'Orbitron,monospace',fontSize:'clamp(9px,2vw,12px)',fontWeight:700,color:step.action.color,letterSpacing:'.15em',marginBottom:'10px',textAlign:'center'}}>
+                  {step.action.label}
+                </div>
+                <div className="crash-hint">HINT: {step.action.hint}</div>
+                <input
+                  className={`crash-input${inputErr?' err':''}`}
+                  type="text"
+                  value={codeInput}
+                  onChange={e=>setCodeInput(e.target.value.replace(/[^0-9a-zA-Z]/g,'').toUpperCase())}
+                  onKeyDown={e=>e.key==='Enter'&&handleAction()}
+                  placeholder="_ _ _ _"
+                  maxLength={8}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck="false"
+                />
+                <div className="crash-err-msg">{codeError&&codeInput?'INVALID CODE — AUTHORISATION DENIED':''}</div>
+                <button
+                  className="crash-btn"
+                  style={{borderColor:step.action.color,color:step.action.color,width:'100%'}}
+                  onClick={handleAction}
+                >
+                  SUBMIT CODE →
+                </button>
+              </>
+            )}
+
+            {step.action.type==='button'&&(
+              <>
+                <div style={{fontFamily:'Orbitron,monospace',fontSize:'clamp(9px,2vw,12px)',fontWeight:700,color:step.action.color,letterSpacing:'.15em',marginBottom:'6px',textAlign:'center'}}>
+                  {step.action.label}
+                </div>
+                <div style={{fontSize:'clamp(8px,1.8vw,10px)',color:'#444',letterSpacing:'.08em',textAlign:'center',marginBottom:'14px'}}>
+                  {step.action.sublabel}
+                </div>
+                <button
+                  className="crash-btn"
+                  style={{borderColor:step.action.color,color:step.action.color,width:'100%'}}
+                  onClick={handleAction}
+                >
+                  {step.action.label} →
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── NAME SCREEN ──
+function NameScreen({onComplete}){
+  const[name,setName]=useState('');
+  const[err,setErr]=useState('');
+  const[inputErr,setInputErr]=useState(false);
+  const ref=useRef(null);
+  useEffect(()=>{setTimeout(()=>ref.current?.focus(),400)},[]);
+
+  const submit=()=>{
+    const t=name.trim().toUpperCase();
+    if(t.length<2){setErr('IDENTIFICATION INSUFFICIENT — MINIMUM 2 CHARACTERS REQUIRED');setInputErr(true);setTimeout(()=>setInputErr(false),500);return}
+    setOperatorLS(t);onComplete(t);
+  };
+
+  return(
+    <div className="name-screen">
+      <div className="name-box">
+        <div className="nc tl"/><div className="nc tr"/><div className="nc bl"/><div className="nc br"/>
+        <div className="name-title">ALTERRA CORP — CREW IDENTIFICATION</div>
+        <div className="name-sub">
+          ALTERRA CORP — FIELD ANALYSIS TERMINAL<br/>
+          ALTERRA CORP — AURORA CACHE — EMERGENCY PROTOCOL<br/>
+          ALTERRA CORP IDENTITY VERIFICATION — AURORA CACHE
+        </div>
+        <label className="name-lbl">ENTER YOUR NAME — CREW MEMBER</label>
+        <input
+          ref={ref}
+          className={`name-input${inputErr?' err':''}`}
+          type="text"
+          value={name}
+          onChange={e=>{setName(e.target.value);setErr('')}}
+          onKeyDown={e=>e.key==='Enter'&&submit()}
+          placeholder="YOUR NAME"
+          maxLength={30}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck="false"
+        />
+        <div className="name-err">{err}</div>
+        <button className="name-btn" onClick={submit}>CONFIRM IDENTITY →</button>
+        <div className="name-manifest">
+          AURORA CACHE MANIFEST — ALTERRA CORP<br/>
+          ASSIGNED OPERATOR: <span>MAX FARNELL</span><br/>
+          MANIFEST STATUS: <span>UNVERIFIED</span><br/>
+          ACCESS LEVEL: <span>RESTRICTED — BIOMETRIC CONFIRMATION REQUIRED</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── RETINA SCREEN ──
+function RetinaScreen({operatorName,onComplete}){
+  const[phase,setPhase]=useState('wait');
+  const[progress,setProgress]=useState(0);
+  const[status,setStatus]=useState('TAP THE SCANNER TO INITIATE RETINAL SCAN');
+  const[checks,setChecks]=useState([]);
+  const ivRef=useRef(null);
+
+  const startScan=()=>{
+    if(phase!=='wait')return;
+    setPhase('scan');setStatus('SCANNING... HOLD COMPLETELY STILL');setProgress(0);
+    let p=0;
+    ivRef.current=setInterval(()=>{
+      p+=Math.random()*2.5+1;
+      setProgress(Math.min(p,100));
+      if(p>=100){
+        clearInterval(ivRef.current);
+        setPhase('match');setStatus('CROSS-REFERENCING BIOMETRIC DATABASE...');
+        doMatch();
+      }
+    },55);
+  };
+
+  const doMatch=()=>{
+    const items=[
+      'IRIS PATTERN ANALYSIS',
+      'RETINAL VESSEL MAPPING',
+      'BIOMETRIC HASH GENERATION',
+      'CREW DATABASE QUERY',
+      'CLEARANCE LEVEL VERIFICATION',
+    ];
+    items.forEach((txt,i)=>{
+      setTimeout(()=>{
+        setChecks(prev=>[...prev,{txt,done:false}]);
+        setTimeout(()=>{
+          setChecks(prev=>prev.map((c,ci)=>ci===i?{...c,done:true}:c));
+          if(i===items.length-1){
+            setTimeout(()=>{
+              setPhase('ok');
+              setStatus(`IDENTITY CONFIRMED — WELCOME, ${operatorName}`);
+              setTimeout(onComplete,2200);
+            },500);
+          }
+        },380);
+      },i*580);
+    });
+  };
+
+  useEffect(()=>()=>clearInterval(ivRef.current),[]);
+
+  const eyeColor=phase==='ok'?'var(--green)':phase==='match'?'var(--amber)':'var(--teal)';
+  const barColor=phase==='ok'?'var(--green)':phase==='match'?'var(--amber)':'var(--teal)';
+
+  return(
+    <div className="retina-screen">
+      <div className="retina-title">BIOMETRIC VERIFICATION — RETINAL SCAN</div>
+      <div className="retina-sub">
+        {phase==='wait'?'TAP TO BEGIN BIOMETRIC SCAN':phase==='ok'?`CREW MEMBER ${operatorName} — ACCESS GRANTED`:'SCAN IN PROGRESS — DO NOT MOVE'}
+      </div>
+
+      <div className="retina-wrap" onClick={startScan} style={{cursor:phase==='wait'?'pointer':'default'}}>
+        <div className="retina-cb tl"/><div className="retina-cb tr"/><div className="retina-cb bl"/><div className="retina-cb br"/>
+        <div className="retina-eye" style={{borderColor:eyeColor}}>
+          <div className="retina-ring rr1"/><div className="retina-ring rr2"/><div className="retina-ring rr3"/>
+          <div className="retina-iris" style={{borderColor:eyeColor}}>
+            <div className="retina-pupil"/>
+          </div>
+          {(phase==='scan'||phase==='match')&&<div className="retina-scan-line"/>}
+          {phase==='ok'&&<div style={{position:'absolute',inset:0,borderRadius:'50%',background:'rgba(0,255,136,.12)',animation:'glow 1s ease-in-out infinite'}}/>}
+          {phase==='wait'&&<div className="retina-tap-hint">TAP TO SCAN</div>}
+        </div>
+        <div className="retina-side left">
+          <div>IRIS-Ø: --</div>
+          <div>PUPIL: --</div>
+          <div>VESSEL: --</div>
+          <div>HASH: --</div>
+        </div>
+        <div className="retina-side right">
+          <div>R-CANAL: {phase!=='wait'?'ACTIVE':'IDLE'}</div>
+          <div>DEPTH: 4.2mm</div>
+          <div>RES: 2048px</div>
+          <div>MODE: BIO-V2</div>
+        </div>
+      </div>
+
+      <div className="retina-status">{status}</div>
+      <div className="retina-pbar">
+        <div className="retina-pfill" style={{width:`${progress}%`,background:`linear-gradient(90deg,${barColor}80,${barColor})`}}/>
+      </div>
+
+      {checks.length>0&&(
+        <div className="retina-checks">
+          {checks.map((c,i)=>(
+            <div key={i} className="retina-check-row" style={{color:c.done?'var(--green)':'var(--text-dim)'}}>
+              <span>{c.txt}</span>
+              <span style={{flexShrink:0,marginLeft:'12px'}}>{c.done?'OK':'...'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── BOOT SCREEN ──
+function BootScreen({operatorName,onComplete}){
+  const[lines,setLines]=useState([]);
+  const[progress,setProgress]=useState(0);
+  const[showBtn,setShowBtn]=useState(false);
+
+  const BL=[
+    {text:`IDENTITY CONFIRMED — WELCOME, ${operatorName}`,type:'ok',delay:300},
+    {text:'PORTABLE SURVIVAL VESSEL — UNIT 7 OF 12 — ALTERRA CORP — AURORA CACHE',type:'normal',delay:700},
+    {text:'LIFEPOD SYSTEMS INITIALISING — EMERGENCY PROTOCOL ACTIVE',type:'normal',delay:1100},
+    {text:'Checking power cell inventory...',type:'normal',delay:1400},
+    {text:'POWER CELLS: 4 CONFIGURATIONS DETECTED — DRY — UNACTIVATED',type:'warn',delay:1800},
+    {text:'Checking atmosphere sensors...',type:'normal',delay:2100},
+    {text:'ATMOSPHERE: MARGINAL — CO2 ELEVATED — MONITORING RECOMMENDED',type:'warn',delay:2500},
+    {text:'Checking distress beacon...',type:'normal',delay:2800},
+    {text:'BEACON ALT-BCN-001: OFFLINE — INSUFFICIENT POWER — 13.5V REQUIRED',type:'err',delay:3200},
+    {text:'Checking electrochemical fusion core...',type:'normal',delay:3500},
+    {text:'GALVANIC REACTOR: STANDBY — ELECTROLYTE NOT PRESENT',type:'warn',delay:3900},
+    {text:'Loading field analysis database...',type:'normal',delay:4200},
+    {text:'DATABASE: 12 ITEMS REGISTERED — READY',type:'ok',delay:4600},
+    {text:'AURORA TRANSPONDER: SILENT — LAST CONTACT UNKNOWN',type:'err',delay:5000},
+    {text:`ALTERRA FIELD TERMINAL READY — OPERATOR: ${operatorName}`,type:'ok',delay:5400},
+  ];
+
+  useEffect(()=>{
+    BL.forEach((line,i)=>{
+      setTimeout(()=>{
+        setLines(prev=>[...prev,line]);
+        setProgress(Math.round(((i+1)/BL.length)*100));
+        if(i===BL.length-1)setTimeout(()=>setShowBtn(true),400);
+      },line.delay);
+    });
+  },[]);
+
+  return(
+    <div className="boot-screen">
+      <div className="boot-logo">ALTERRA</div>
+      <div className="boot-sub">FIELD ANALYSIS TERMINAL — ALTERRA CORP — AURORA CACHE</div>
+      <div className="boot-log">
+        {lines.map((l,i)=>(
+          <div key={i} className={`boot-line ${l.type}`}>
+            <span style={{color:'var(--text-dim)',flexShrink:0}}>[{String(i).padStart(2,'0')}]</span>
+            <span>{l.text}</span>
+          </div>
+        ))}
+      </div>
+      <div className="boot-pbar"><div className="boot-pfill" style={{width:`${progress}%`}}/></div>
+      {showBtn&&<button className="boot-btn" onClick={()=>{setOnboarded();onComplete()}}>ENTER FIELD TERMINAL</button>}
+    </div>
+  );
+}
+
+// ── ITEM DETAIL ──
+function ItemDetail({item,onClose}){
+  const[speaking,setSpeaking]=useState(false);
+  const color=TC[item.type]||'var(--teal)';
+
+  useEffect(()=>{
+    const t=setTimeout(()=>handleSpeak(),500);
+    return()=>{clearTimeout(t);window.speechSynthesis?.cancel()};
+  },[item.id]);
+
+  const handleSpeak=()=>{setSpeaking(true);playItemAudio(item.id,item.description,()=>setSpeaking(true),()=>setSpeaking(false))};
+
+  const cColor=item.condition==='NOMINAL'?'var(--green)':item.condition==='OFFLINE'||item.condition==='UNASSEMBLED'?'var(--red)':item.condition==='USED'?'var(--amber)':'var(--teal)';
+
+  return(
+    <div className="item-detail">
+      <div className="cdec tl"/><div className="cdec tr"/><div className="cdec bl"/><div className="cdec br"/>
+      <button className="close-btn" onClick={onClose}>[ CLOSE ]</button>
+      <div className="id-text">{item.id}</div>
+      <div className="id-name">{item.name}</div>
+      <div className="id-badge" style={{color,borderColor:color}}>{item.type}</div>
+      <div className="id-stats">
+        <div className="id-stat"><span className="id-stat-lbl">CHEMISTRY</span><span className="id-stat-val" style={{fontSize:'clamp(8px,1.8vw,10px)'}}>{item.chemistry}</span></div>
+        <div className="id-stat"><span className="id-stat-lbl">OUTPUT</span><span className="id-stat-val">{item.voltage}</span></div>
+        <div className="id-stat"><span className="id-stat-lbl">STATUS</span><span className="id-stat-val" style={{color:cColor,fontSize:'clamp(7px,1.5vw,9px)'}}>{item.condition}</span></div>
+      </div>
+      <div className="id-div"/>
+      <div className="id-slbl">PDA ANALYSIS</div>
+      <div className="id-desc">{item.description}</div>
+      <div className="id-div"/>
+      <div className="id-slbl">SURVIVAL PROTOCOL</div>
+      <div className="id-surv">{item.survivalUse}</div>
+      <button className={`voice-btn${speaking?' speaking':''}`} onClick={handleSpeak}>
+        {speaking?(<><div className="vbars">{[1,2,3,4,5].map(i=><div key={i} className="vbar"/>)}</div>TRANSMITTING...</>):(<>&#9654; REPLAY PDA ANALYSIS</>)}
+      </button>
+    </div>
+  );
+}
+
+// ── RESET BUTTON ──
+function HiddenReset(){
+  const[confirm,setConfirm]=useState(false);
+  const handleClick=()=>{
+    if(!confirm){setConfirm(true);setTimeout(()=>setConfirm(false),3000);return;}
+    localStorage.clear();
+    window.location.reload();
+  };
+  return(
+    <button onClick={handleClick} style={{
+      position:'fixed',bottom:'10px',left:'10px',zIndex:9999,
+      padding:'5px 10px',background:'var(--bg2)',
+      border:`1px solid ${confirm?'var(--red)':'var(--border)'}`,
+      color:confirm?'var(--red)':'var(--text-dim)',
+      fontFamily:'Share Tech Mono,monospace',fontSize:'10px',
+      letterSpacing:'.08em',cursor:'pointer',transition:'all .2s',
+    }}>
+      {confirm?'CONFIRM RESET?':'⟳ RESET'}
+    </button>
+  );
+}
+
+// ── SCAN PANEL ──
+const PICKER_ITEMS = [
+  {id:'ALT-MGC-001',    label:'POWER CELL',       sub:'Mg|Cu · 2.7V',       col:'#00e5cc'},
+  {id:'ALT-BP2S-001',   label:'BATTERY PACK 2S',  sub:'5.4V series',         col:'#00b4d8'},
+  {id:'ALT-BP3S-001',   label:'BATTERY PACK 3S',  sub:'8.1V series',         col:'#48cae4'},
+  {id:'ALT-BP5S2P-001', label:'PACK 5S2P',        sub:'13.5V · BEACON',      col:'#ffb300'},
+  {id:'ALT-GR-1S4P-001',label:'REACTOR',          sub:'1S4P · 480mA',        col:'#c77dff'},
+  {id:'ALT-ESP-001',    label:'ELECTROLYTE',       sub:'NaCl(aq) · green',    col:'#00ff88'},
+  {id:'ALT-NCS-001',    label:'NaCl CRYSTALS',     sub:'Dry electrolyte',     col:'#90e0ef'},
+  {id:'ALT-BCN-001',    label:'BEACON',            sub:'LIFEPOD-5 · 406MHz',  col:'#ff3d3d'},
+  {id:'ALT-IDK-001',    label:'IODINE KIT',        sub:'I2(aq) · x3 spray',   col:'#f4845f'},
+  {id:'ALT-PDK-001',    label:'PERMANGANATE KIT',  sub:'KMnO4 · x3 spray',   col:'#c77dff'},
+  {id:'ALT-PSC-001',    label:'CASE ALPHA',        sub:'Energy supplies',     col:'#ffb300'},
+  {id:'ALT-FCC-001',    label:'CASE BETA',         sub:'Field ops cache',     col:'#ff6b9d'},
+  {id:'ALT-ADT-001',    label:'AUDIO TX',          sub:'Distress transmitter',col:'#ff6b9d'},
+];
+
+// ── LABEL TEXT → ITEM ID MATCHING ──
+const LABEL_KEYS = [
+  {id:'ALT-BP5S2P-001', keys:['5S2P','13.5']},
+  {id:'ALT-GR-1S4P-001',keys:['1S4P','REACTOR','480']},
+  {id:'ALT-BP3S-001',   keys:['PACK 3S','BP3S','8.1V','8.1']},
+  {id:'ALT-BP2S-001',   keys:['PACK 2S','BP2S','5.4V','5.4']},
+  {id:'ALT-PDK-001',    keys:['PERMANGANATE','KMNO','PDK']},
+  {id:'ALT-IDK-001',    keys:['IODINE','IDK']},
+  {id:'ALT-BCN-001',    keys:['BEACON','406','BCN','LIFEPOD']},
+  {id:'ALT-ESP-001',    keys:['CHROMATIC','SPECIMEN','ESP']},
+  {id:'ALT-NCS-001',    keys:['DRY CRYSTAL','CRYSTALS','NCS']},
+  {id:'ALT-PSC-001',    keys:['CASE ALPHA','ALPHA']},
+  {id:'ALT-FCC-001',    keys:['CASE BETA','BETA']},
+  {id:'ALT-ADT-001',    keys:['AUDIO TX','TRANSMITTER','ADT']},
+  {id:'ALT-MGC-001',    keys:['POWER CELL','MG|CU','2.7V','MGC']},
+];
+
+function matchLabel(text){
+  const up=text.toUpperCase();
+  let best=null,bestScore=0;
+  for(const {id,keys} of LABEL_KEYS){
+    const score=keys.filter(k=>up.includes(k)).length;
+    if(score>bestScore){bestScore=score;best=id;}
+  }
+  return bestScore>0?best:null;
+}
+
+function ScanPanel({onItem}){
+  const[mode,setMode]=useState('cam');
+  const[scanning,setScanning]=useState(false);
+  const[reading,setReading]=useState(false);  // OCR in progress
+  const[ocrStatus,setOcrStatus]=useState('');
+  const[manual,setManual]=useState('');
+  const[selected,setSelected]=useState(null);
+  const[camErr,setCamErr]=useState('');
+  const videoRef=useRef(null);
+  const streamRef=useRef(null);
+  const canvasRef=useRef(null);
+  const qrRef=useRef(null);
+  const scannerRef=useRef(null);
+  const workerRef=useRef(null);
+
+  // Attach stream to video after it mounts
+  useEffect(()=>{
+    if(scanning&&mode==='cam'&&videoRef.current&&streamRef.current){
+      videoRef.current.srcObject=streamRef.current;
+      videoRef.current.play().catch(()=>{});
+    }
+  },[scanning,mode]);
+
+  const startCam=()=>{
+    setCamErr('');setOcrStatus('');
+    const needsHttps=location.protocol!=='https:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1';
+    if(needsHttps){setCamErr('Camera requires HTTPS. Open this page via a secure server, or use PICKER below.');return;}
+    if(!navigator.mediaDevices?.getUserMedia){setCamErr('Camera not supported in this browser — use PICKER or MANUAL below.');return;}
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}})
+      .then(stream=>{streamRef.current=stream;setScanning(true);})
+      .catch(e=>{
+        if(e.name==='NotAllowedError')setCamErr('Camera permission denied — allow camera access in Settings, or use PICKER below.');
+        else setCamErr('Camera unavailable — use PICKER or MANUAL below.');
+      });
+  };
+
+  const stopCam=()=>{
+    streamRef.current?.getTracks().forEach(t=>t.stop());
+    streamRef.current=null;
+    setScanning(false);setReading(false);setOcrStatus('');
+  };
+
+  // ── OCR CAPTURE ──
+  const captureAndRead=async()=>{
+    if(reading||!videoRef.current)return;
+    setReading(true);setOcrStatus('ANALYSING LABEL...');
+    try{
+      const v=videoRef.current;
+      const c=canvasRef.current;
+      c.width=v.videoWidth||640;c.height=v.videoHeight||480;
+      c.getContext('2d').drawImage(v,0,0);
+      const dataUrl=c.toDataURL('image/png');
+      // Init worker once
+      if(!workerRef.current){
+        workerRef.current=await Tesseract.createWorker('eng');
+      }
+      const {data:{text}}=await workerRef.current.recognize(dataUrl);
+      const match=matchLabel(text);
+      if(match){
+        setOcrStatus('IDENTIFIED: '+match);
+        setTimeout(()=>{stopCam();onItem(match);},600);
+      } else {
+        setOcrStatus('NO MATCH — HOLD LABEL FLAT & STILL, RETRY');
+        setReading(false);
+      }
+    }catch(e){
+      setOcrStatus('READ ERROR — RETRY');
+      setReading(false);
+    }
+  };
+
+  // Cleanup worker on unmount
+  useEffect(()=>()=>{
+    stopCam();
+    workerRef.current?.terminate();
+  },[]);
+
+  // ── QR MODE ──
+  const startQR=()=>{
+    setScanning(true);
+    setTimeout(()=>{
+      if(!qrRef.current)return;
+      const s=new Html5Qrcode('qr-reader');
+      scannerRef.current=s;
+      s.start(
+        {facingMode:'environment'},
+        {fps:10,qrbox:{width:220,height:220}},
+        (text)=>{s.stop().then(()=>{scannerRef.current=null;setScanning(false);onItem(text.trim())}).catch(()=>{})},
+        ()=>{}
+      ).catch(()=>{setScanning(false);});
+    },100);
+  };
+
+  const stopQR=()=>{
+    scannerRef.current?.stop().catch(()=>{});
+    scannerRef.current=null;
+    setScanning(false);
+  };
+
+  const doManual=()=>{if(!manual.trim())return;onItem(manual.trim());setManual('');};
+
+  const handlePick=(item)=>{
+    setSelected(item.id);
+    setTimeout(()=>{stopCam();stopQR();onItem(item.id);setSelected(null);},200);
+  };
+
+  const tabStyle=(m)=>({
+    flex:1,padding:'7px',
+    background:mode===m?'var(--teal-dark)':'var(--bg2)',
+    border:'1px solid '+(mode===m?'var(--teal)':'var(--border)'),
+    color:mode===m?'var(--teal)':'var(--text-dim)',
+    fontFamily:'Share Tech Mono,monospace',
+    fontSize:'clamp(8px,1.8vw,10px)',
+    letterSpacing:'.1em',cursor:'pointer',
+  });
+
+  return(
+    <div>
+      <canvas ref={canvasRef} style={{display:'none'}}/>
+      <div style={{display:'flex',gap:'4px',marginBottom:'8px'}}>
+        <button style={tabStyle('cam')} onClick={()=>{stopCam();stopQR();setMode('cam');setCamErr('');}}>CAMERA</button>
+        <button style={tabStyle('pick')} onClick={()=>{stopCam();stopQR();setMode('pick');}}>PICKER</button>
+        <button style={tabStyle('qr')} onClick={()=>{stopCam();stopQR();setMode('qr');}}>QR</button>
+        <button style={tabStyle('manual')} onClick={()=>{stopCam();stopQR();setMode('manual');}}>MANUAL</button>
+      </div>
+
+      {mode==='cam'&&(
+        <div>
+          {!scanning&&!camErr&&(
+            <button className="scan-btn" onClick={startCam}>
+              [ OPEN CAMERA — IDENTIFY LABEL ]
+            </button>
+          )}
+          {camErr&&(
+            <div style={{padding:'10px',color:'var(--red)',fontSize:'clamp(8px,2vw,11px)',border:'1px solid var(--red)',background:'var(--bg2)',marginBottom:'8px'}}>
+              {camErr}
+            </div>
+          )}
+          {scanning&&(
+            <div>
+              <div style={{position:'relative',background:'#000',border:'1px solid var(--border)'}}>
+                <video ref={videoRef} style={{width:'100%',display:'block'}} playsInline muted/>
+                {/* sci-fi frame overlay */}
+                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
+                  <div style={{width:'72%',height:'55%',border:'2px solid var(--teal)',boxShadow:'0 0 0 9999px rgba(0,0,0,0.4)',position:'relative'}}>
+                    <div style={{position:'absolute',top:'-1px',left:'-1px',width:'16px',height:'16px',borderTop:'3px solid var(--teal)',borderLeft:'3px solid var(--teal)'}}/>
+                    <div style={{position:'absolute',top:'-1px',right:'-1px',width:'16px',height:'16px',borderTop:'3px solid var(--teal)',borderRight:'3px solid var(--teal)'}}/>
+                    <div style={{position:'absolute',bottom:'-1px',left:'-1px',width:'16px',height:'16px',borderBottom:'3px solid var(--teal)',borderLeft:'3px solid var(--teal)'}}/>
+                    <div style={{position:'absolute',bottom:'-1px',right:'-1px',width:'16px',height:'16px',borderBottom:'3px solid var(--teal)',borderRight:'3px solid var(--teal)'}}/>
+                  </div>
+                </div>
+              </div>
+              {/* status + buttons */}
+              <div style={{marginTop:'6px',display:'flex',gap:'6px',alignItems:'center'}}>
+                <button
+                  onClick={captureAndRead}
+                  disabled={reading}
+                  style={{
+                    flex:1,padding:'10px',background:reading?'var(--teal-dark)':'transparent',
+                    border:'2px solid '+(reading?'var(--amber)':'var(--teal)'),
+                    color:reading?'var(--amber)':'var(--teal)',
+                    fontFamily:'Orbitron,monospace',fontWeight:700,
+                    fontSize:'clamp(9px,2vw,12px)',letterSpacing:'.15em',cursor:reading?'default':'pointer',
+                    animation:reading?'sPulse 1s ease-in-out infinite':'none',
+                  }}>
+                  {reading?'READING...':'[ IDENTIFY LABEL ]'}
+                </button>
+                <button onClick={stopCam} style={{padding:'10px 12px',background:'transparent',border:'1px solid var(--border)',color:'var(--text-dim)',fontFamily:'Share Tech Mono,monospace',fontSize:'clamp(8px,1.8vw,10px)',cursor:'pointer',letterSpacing:'.08em'}}>
+                  CANCEL
+                </button>
+              </div>
+              {ocrStatus&&(
+                <div style={{marginTop:'6px',padding:'6px 10px',fontSize:'clamp(8px,1.8vw,10px)',letterSpacing:'.1em',
+                  color:ocrStatus.startsWith('IDENTIFIED')?'var(--green)':ocrStatus.startsWith('NO MATCH')||ocrStatus.includes('ERROR')?'var(--amber)':'var(--teal)',
+                  border:'1px solid var(--border)',background:'var(--bg3)'}}>
+                  {ocrStatus}
+                </div>
+              )}
+              <div style={{marginTop:'6px',fontSize:'clamp(7px,1.5vw,9px)',color:'var(--text-dim)',letterSpacing:'.06em',textAlign:'center'}}>
+                HOLD LABEL FLAT IN FRAME — TAP IDENTIFY — OR PICK BELOW
+              </div>
+            </div>
+          )}
+          {/* Picker grid as fallback */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',marginTop:'8px'}}>
+            {PICKER_ITEMS.map(item=>(
+              <div key={item.id} onClick={()=>handlePick(item)}
+                style={{cursor:'pointer',padding:'6px',border:'1px solid '+(selected===item.id?item.col:'var(--border)'),background:selected===item.id?'rgba(0,229,204,0.1)':'var(--bg3)',transition:'all .1s'}}>
+                <div style={{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:'clamp(7px,1.8vw,10px)',color:item.col,letterSpacing:'.05em'}}>{item.label}</div>
+                <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:'clamp(6px,1.4vw,8px)',color:'var(--text-dim)',marginTop:'1px'}}>{item.sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {mode==='pick'&&(
+        <div>
+          <div style={{fontSize:'clamp(8px,1.8vw,9px)',color:'var(--text-dim)',letterSpacing:'.1em',marginBottom:'8px',textAlign:'center'}}>
+            TAP THE ITEM YOU ARE HOLDING
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'5px',maxHeight:'55vh',overflowY:'auto'}}>
+            {PICKER_ITEMS.map(item=>(
+              <div key={item.id} onClick={()=>handlePick(item)}
+                style={{cursor:'pointer',padding:'8px 6px',border:'1px solid '+(selected===item.id?item.col:'var(--border)'),background:selected===item.id?'rgba(0,229,204,0.08)':'var(--bg2)',transition:'all .15s'}}>
+                <div style={{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:'clamp(8px,2vw,10px)',color:item.col,letterSpacing:'.06em',marginBottom:'2px'}}>{item.label}</div>
+                <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:'clamp(7px,1.5vw,8px)',color:'var(--text-dim)',letterSpacing:'.04em'}}>{item.sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {mode==='qr'&&(
+        <div>
+          <button className={'scan-btn'+(scanning?' scanning':'')} onClick={()=>scanning?stopQR():startQR()}>
+            {scanning?'[ SCANNING — TAP TO CANCEL ]':'[ INITIATE QR SCAN ]'}
+          </button>
+          {scanning&&<div id="qr-reader" ref={qrRef} style={{marginTop:'8px'}}/>}
+        </div>
+      )}
+
+      <div className="manual-entry" style={{marginTop:'8px'}}>
+        <input className="manual-input" placeholder="ITEM CODE — e.g. ALT-MGC-001"
+          value={manual} onChange={e=>setManual(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&doManual()}/>
+        <button className="manual-btn" onClick={doManual}>ENTER</button>
+      </div>
+    </div>
+  );
+}
+
+
+// ── MAIN APP ──
+function App(){
+  const[obPhase,setObPhase]=useState(()=>getOnboarded()?'done':'crash');
+  const[operator,setOperator]=useState(getOperator()||'CREW MEMBER');
+  const[scanned,setScanned]=useState(getScanned());
+  const[curItem,setCurItem]=useState(null);
+  const[notif,setNotif]=useState(null);
+
+  const stage=getMissionStage(scanned);
+  const prog=getProgress(scanned);
+  const scannedCount=Object.keys(scanned).length;
+  const totalCount=Object.keys(ITEMS).length;
+
+  const showNotif=(msg,type='normal',dur=3000)=>{setNotif({msg,type});setTimeout(()=>setNotif(null),dur)};
+
+  const processItem=useCallback((code)=>{
+    const t=code.trim().toUpperCase();
+    const item=ITEMS[t];
+    if(!item){showNotif(`UNKNOWN ITEM: ${t}`,'err');setCurItem({unknown:true,code:t});return}
+    const isNew=!scanned[t];
+    const ns={...scanned,[t]:true};
+    setScanned(ns);saveScanned(ns);setCurItem(item);
+    if(isNew)showNotif(`NEW ITEM CATALOGUED: ${item.name}`);
+    else showNotif(`ITEM PREVIOUSLY LOGGED: ${item.id}`);
+  },[scanned]);
+
+
+
+
+
+  const recent=Object.keys(scanned).slice(-8).reverse().map(id=>ITEMS[id]).filter(Boolean);
+
+  const skipToTerminal=()=>{
+    stopAlarmLoop();stopPDA();
+    if(!getOperator())setOperatorLS('CREW MEMBER');
+    setOnboarded();setObPhase('done');
+  };
+
+  const SkipBtn=()=>(
+    <button onClick={skipToTerminal} style={{
+      position:'fixed',bottom:'max(16px, env(safe-area-inset-bottom))',right:'max(16px, env(safe-area-inset-right))',zIndex:99999,
+      padding:'8px 16px',background:'transparent',
+      border:'1px solid rgba(0,229,204,0.18)',
+      color:'rgba(0,229,204,0.28)',
+      fontFamily:'Share Tech Mono,monospace',fontSize:'11px',
+      letterSpacing:'.12em',cursor:'pointer',transition:'all .3s',
+    }}
+    onMouseEnter={e=>{e.currentTarget.style.color='rgba(0,229,204,0.6)';e.currentTarget.style.borderColor='rgba(0,229,204,0.4)'}}
+    onMouseLeave={e=>{e.currentTarget.style.color='rgba(0,229,204,0.28)';e.currentTarget.style.borderColor='rgba(0,229,204,0.18)'}}
+    >SKIP →</button>
+  );
+
+  if(obPhase==='crash')return<><CrashScreen onComplete={()=>setObPhase('name')}/><SkipBtn/></>;
+  if(obPhase==='name')return<><NameScreen onComplete={n=>{setOperator(n);setObPhase('retina')}}/><SkipBtn/></>;
+  if(obPhase==='retina')return<><RetinaScreen operatorName={operator} onComplete={()=>setObPhase('boot')}/><SkipBtn/></>;
+  if(obPhase==='boot')return<><BootScreen operatorName={operator} onComplete={()=>setObPhase('done')}/><SkipBtn/></>;
+
+  const stageColor=stage>=4?'var(--green)':stage>=2?'var(--amber)':'var(--red)';
+
+  return(
+    <div className="terminal">
+      {notif&&<div className={`notif${notif.type==='err'?' err':''}`}>{notif.msg}</div>}
+
+      <div className="header">
+        <div className="header-top">
+          <div>
+            <div className="header-title">ALTERRA CORP — FIELD ANALYSIS TERMINAL</div>
+            <div className="header-sub">AURORA CACHE — OPERATOR: {operator}</div>
+          </div>
+          <div className="status-ind">
+            <div className="pdot" style={{background:stageColor}}/>
+            <span>{stage>=4?'BEACON ONLINE':stage>=2?'ACTIVE':'STANDBY'}</span>
+          </div>
+        </div>
+        <div className="header-stats">
+          <div className="stat"><span className="stat-lbl">ITEMS FOUND</span><span className="stat-val">{scannedCount}/{totalCount}</span></div>
+          <div className="stat"><span className="stat-lbl">PROGRESS</span><span className={`stat-val ${prog>=100?'green':prog>=50?'':'amber'}`}>{prog}%</span></div>
+          <div className="stat"><span className="stat-lbl">MISSION</span><span className="stat-val" style={{fontSize:'clamp(8px,1.8vw,10px)'}}>{MISSION_STAGES[Math.min(stage,MISSION_STAGES.length-1)]?.name}</span></div>
+          <div className="stat"><span className="stat-lbl">BEACON</span><span className={`stat-val ${stage>=4?'green':'red'}`}>{stage>=4?'ONLINE':'OFFLINE'}</span></div>
+        </div>
+      </div>
+
+      <div className="mission-bar">
+        <span className="mission-lbl">OBJ//</span>
+        <span className="mission-txt">{MISSION_STAGES[Math.min(stage,MISSION_STAGES.length-1)]?.description||'MISSION COMPLETE'}</span>
+        <div className="pbar-wrap"><div className="pbar-fill" style={{width:`${prog}%`}}/></div>
+      </div>
+
+      <div className="main-grid">
+        <div className="scan-sec">
+          <ScanPanel onItem={processItem}/>
+        </div>
+
+        {curItem&&!curItem.unknown&&<ItemDetail item={curItem} onClose={()=>setCurItem(null)}/>}
+        {curItem?.unknown&&(
+          <div className="item-detail scan-sec">
+            <div className="cdec tl"/><div className="cdec tr"/><div className="cdec bl"/><div className="cdec br"/>
+            <button className="close-btn" onClick={()=>setCurItem(null)}>[ CLOSE ]</button>
+            <div style={{textAlign:'center',padding:'20px'}}>
+              <div className="unk-id">UNRECOGNISED</div>
+              <div className="unk-txt">ITEM CODE: {curItem.code}<br/>NOT FOUND IN ALTERRA DATABASE<br/>VERIFY CODE AND RETRY</div>
+            </div>
+          </div>
+        )}
+
+        <div className="panel">
+          <div className="panel-hdr"><div className="picon"/>ITEM LOG</div>
+          {recent.length===0?(
+            <div className="empty-log">NO ITEMS CATALOGUED<br/>INITIATE SCAN TO BEGIN</div>
+          ):(
+            <div className="item-log">
+              {recent.map(item=>(
+                <div key={item.id} className="log-entry" onClick={()=>setCurItem(item)}>
+                  <span className="log-id">{item.id.split('-').slice(-2).join('-')}</span>
+                  <span className="log-name">{item.name.length>22?item.name.slice(0,22)+'...':item.name}</span>
+                  <span className={`log-type type-${item.type}`}>{item.type}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="panel">
+          <div className="panel-hdr"><div className="picon"/>POWER STATUS</div>
+          {[
+            {id:'ALT-MGC-001',label:'SINGLE CELL',v:'2.7V',col:'#88aaff'},
+            {id:'ALT-BP2S-001',label:'PACK 2S',v:'5.4V',col:'var(--amber)'},
+            {id:'ALT-BP3S-001',label:'PACK 3S',v:'8.1V',col:'#f4845f'},
+            {id:'ALT-BP5S2P-001',label:'PACK 5S2P ★',v:'13.5V',col:'var(--teal)'},
+            {id:'ALT-GR-1S4P-001',label:'REACTOR',v:'2.7V/480mA',col:'#c77dff'},
+            {id:'ALT-ADT-001',label:'AUDIO TX',v:'ACTIVE',col:'#ff6b9d'},
+            {id:'ALT-BCN-001',label:'BEACON',v:'OFFLINE→ONLINE',col:'var(--red)'},
+          ].map(({id,label,v,col})=>(
+            <div key={id} style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px',cursor:scanned[id]?'pointer':'default'}}
+              onClick={()=>scanned[id]&&setCurItem(ITEMS[id])}>
+              <div style={{width:'10px',height:'10px',borderRadius:'50%',background:scanned[id]?col:'var(--bg3)',border:`1px solid ${scanned[id]?col:'var(--border)'}`,flexShrink:0,transition:'all .3s'}}/>
+              <span style={{fontSize:'clamp(8px,1.8vw,10px)',color:scanned[id]?col:'var(--text-dim)',flex:1,letterSpacing:'.06em'}}>{label}</span>
+              <span style={{fontSize:'clamp(8px,1.8vw,10px)',color:scanned[id]?col:'var(--border)',letterSpacing:'.06em'}}>{scanned[id]?v:'---'}</span>
+            </div>
+          ))}
+          <div style={{height:'1px',background:'var(--border)',margin:'8px 0'}}/>
+          <div style={{fontSize:'clamp(7px,1.5vw,9px)',color:scanned['ALT-BCN-001']&&scanned['ALT-BP5S2P-001']?'var(--green)':'var(--text-dim)',letterSpacing:'.1em'}}>
+            BEACON THRESHOLD: 13.5V — {scanned['ALT-BP5S2P-001']?'✓ MET':'NOT MET'}  |  AUDIO TX: {scanned['ALT-ADT-001']?'✓ READY':'LOCATE'}
+          </div>
+        </div>
+      </div>
+
+      <HiddenReset/>
+      <div className="footer">
+        <span>ALTERRA CORP // AURORA CACHE</span>
+        <span>ITEMS: {scannedCount}/{totalCount}</span>
+        <span>OPERATOR: {operator}</span>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
