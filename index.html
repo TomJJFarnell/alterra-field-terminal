@@ -1139,7 +1139,7 @@ function App(){
     }catch(e){}
     const t=raw.toUpperCase();
     const item=ITEMS[t];
-    if(!item){showNotif(`UNKNOWN ITEM: ${t}`,'err');setCurItem({unknown:true,code:t});return}
+    if(!item){showNotif(`RAW: ${code.trim().slice(0,40)}`,'err');setCurItem({unknown:true,code:t});return}
     const isNew=!scanned[t];
     const ns={...scanned,[t]:true};
     setScanned(ns);saveScanned(ns);setCurItem(item);
