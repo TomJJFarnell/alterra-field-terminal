@@ -264,14 +264,18 @@ const getProgress=s=>Math.round((Object.keys(s).length/Object.keys(ITEMS).length
 let audioUnlocked = false;
 let alarmAudio = null;
 let currentPDA = null;
+const audioPool = {};
 
 const unlockAudio = () => {
   if(audioUnlocked) return;
   audioUnlocked = true;
-  // Prime the alarm audio object
-  alarmAudio = new Audio('sounds/alarm-loop.mp3');
-  alarmAudio.loop = true;
-  alarmAudio.volume = 0.7;
+  // Prime all crash audio during the user gesture so iOS allows later playback
+  const crashFiles = ['alarm-loop','engine-startup','crash-warning','crash-critical','crash-eject','crash-recovery','impact-explosion','impact-drop','ship-roar','siren','blast-off'];
+  crashFiles.forEach(name => {
+    const a = new Audio(`sounds/${name}.mp3`);
+    if(name === 'alarm-loop'){ a.loop = true; a.volume = 0.7; alarmAudio = a; }
+    else { a.volume = 0; a.play().catch(()=>{}); audioPool[name] = a; }
+  });
 };
 
 const playAlarmLoop = () => {
@@ -286,9 +290,12 @@ const stopAlarmLoop = () => {
   alarmAudio.currentTime = 0;
 };
 
-// Play a one-shot sound file
+// Play a one-shot sound file — uses pre-unlocked pool on iOS
 const playSound = (file, volume=1.0, delay=0) => {
+  const name = file.replace('sounds/','').replace('.mp3','');
   setTimeout(()=>{
+    const pre = audioPool[name];
+    if(pre){ pre.volume=volume; pre.currentTime=0; pre.play().catch(()=>{}); return; }
     const a = new Audio(file);
     a.volume = volume;
     a.play().catch(()=>{});
@@ -1063,83 +1070,10 @@ function matchLabel(text){
 }
 
 function ScanPanel({onItem}){
-  const[mode,setMode]=useState('cam');
   const[scanning,setScanning]=useState(false);
-  const[reading,setReading]=useState(false);  // OCR in progress
-  const[ocrStatus,setOcrStatus]=useState('');
-  const[manual,setManual]=useState('');
-  const[selected,setSelected]=useState(null);
-  const[camErr,setCamErr]=useState('');
-  const videoRef=useRef(null);
-  const streamRef=useRef(null);
-  const canvasRef=useRef(null);
   const qrRef=useRef(null);
   const scannerRef=useRef(null);
-  const workerRef=useRef(null);
 
-  // Attach stream to video after it mounts
-  useEffect(()=>{
-    if(scanning&&mode==='cam'&&videoRef.current&&streamRef.current){
-      videoRef.current.srcObject=streamRef.current;
-      videoRef.current.play().catch(()=>{});
-    }
-  },[scanning,mode]);
-
-  const startCam=()=>{
-    setCamErr('');setOcrStatus('');
-    const needsHttps=location.protocol!=='https:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1';
-    if(needsHttps){setCamErr('Camera requires HTTPS. Open this page via a secure server, or use PICKER below.');return;}
-    if(!navigator.mediaDevices?.getUserMedia){setCamErr('Camera not supported in this browser — use PICKER or MANUAL below.');return;}
-    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}})
-      .then(stream=>{streamRef.current=stream;setScanning(true);})
-      .catch(e=>{
-        if(e.name==='NotAllowedError')setCamErr('Camera permission denied — allow camera access in Settings, or use PICKER below.');
-        else setCamErr('Camera unavailable — use PICKER or MANUAL below.');
-      });
-  };
-
-  const stopCam=()=>{
-    streamRef.current?.getTracks().forEach(t=>t.stop());
-    streamRef.current=null;
-    setScanning(false);setReading(false);setOcrStatus('');
-  };
-
-  // ── OCR CAPTURE ──
-  const captureAndRead=async()=>{
-    if(reading||!videoRef.current)return;
-    setReading(true);setOcrStatus('ANALYSING LABEL...');
-    try{
-      const v=videoRef.current;
-      const c=canvasRef.current;
-      c.width=v.videoWidth||640;c.height=v.videoHeight||480;
-      c.getContext('2d').drawImage(v,0,0);
-      const dataUrl=c.toDataURL('image/png');
-      // Init worker once
-      if(!workerRef.current){
-        workerRef.current=await Tesseract.createWorker('eng');
-      }
-      const {data:{text}}=await workerRef.current.recognize(dataUrl);
-      const match=matchLabel(text);
-      if(match){
-        setOcrStatus('IDENTIFIED: '+match);
-        setTimeout(()=>{stopCam();onItem(match);},600);
-      } else {
-        setOcrStatus('NO MATCH — HOLD LABEL FLAT & STILL, RETRY');
-        setReading(false);
-      }
-    }catch(e){
-      setOcrStatus('READ ERROR — RETRY');
-      setReading(false);
-    }
-  };
-
-  // Cleanup worker on unmount
-  useEffect(()=>()=>{
-    stopCam();
-    workerRef.current?.terminate();
-  },[]);
-
-  // ── QR MODE ──
   const startQR=()=>{
     setScanning(true);
     setTimeout(()=>{
@@ -1161,135 +1095,14 @@ function ScanPanel({onItem}){
     setScanning(false);
   };
 
-  const doManual=()=>{if(!manual.trim())return;onItem(manual.trim());setManual('');};
-
-  const handlePick=(item)=>{
-    setSelected(item.id);
-    setTimeout(()=>{stopCam();stopQR();onItem(item.id);setSelected(null);},200);
-  };
-
-  const tabStyle=(m)=>({
-    flex:1,padding:'7px',
-    background:mode===m?'var(--teal-dark)':'var(--bg2)',
-    border:'1px solid '+(mode===m?'var(--teal)':'var(--border)'),
-    color:mode===m?'var(--teal)':'var(--text-dim)',
-    fontFamily:'Share Tech Mono,monospace',
-    fontSize:'clamp(8px,1.8vw,10px)',
-    letterSpacing:'.1em',cursor:'pointer',
-  });
+  useEffect(()=>()=>{stopQR();},[]);
 
   return(
     <div>
-      <canvas ref={canvasRef} style={{display:'none'}}/>
-      <div style={{display:'flex',gap:'4px',marginBottom:'8px'}}>
-        <button style={tabStyle('cam')} onClick={()=>{stopCam();stopQR();setMode('cam');setCamErr('');}}>CAMERA</button>
-        <button style={tabStyle('pick')} onClick={()=>{stopCam();stopQR();setMode('pick');}}>PICKER</button>
-        <button style={tabStyle('qr')} onClick={()=>{stopCam();stopQR();setMode('qr');}}>QR</button>
-        <button style={tabStyle('manual')} onClick={()=>{stopCam();stopQR();setMode('manual');}}>MANUAL</button>
-      </div>
-
-      {mode==='cam'&&(
-        <div>
-          {!scanning&&!camErr&&(
-            <button className="scan-btn" onClick={startCam}>
-              [ OPEN CAMERA — IDENTIFY LABEL ]
-            </button>
-          )}
-          {camErr&&(
-            <div style={{padding:'10px',color:'var(--red)',fontSize:'clamp(8px,2vw,11px)',border:'1px solid var(--red)',background:'var(--bg2)',marginBottom:'8px'}}>
-              {camErr}
-            </div>
-          )}
-          {scanning&&(
-            <div>
-              <div style={{position:'relative',background:'#000',border:'1px solid var(--border)'}}>
-                <video ref={videoRef} style={{width:'100%',display:'block'}} playsInline muted/>
-                {/* sci-fi frame overlay */}
-                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
-                  <div style={{width:'72%',height:'55%',border:'2px solid var(--teal)',boxShadow:'0 0 0 9999px rgba(0,0,0,0.4)',position:'relative'}}>
-                    <div style={{position:'absolute',top:'-1px',left:'-1px',width:'16px',height:'16px',borderTop:'3px solid var(--teal)',borderLeft:'3px solid var(--teal)'}}/>
-                    <div style={{position:'absolute',top:'-1px',right:'-1px',width:'16px',height:'16px',borderTop:'3px solid var(--teal)',borderRight:'3px solid var(--teal)'}}/>
-                    <div style={{position:'absolute',bottom:'-1px',left:'-1px',width:'16px',height:'16px',borderBottom:'3px solid var(--teal)',borderLeft:'3px solid var(--teal)'}}/>
-                    <div style={{position:'absolute',bottom:'-1px',right:'-1px',width:'16px',height:'16px',borderBottom:'3px solid var(--teal)',borderRight:'3px solid var(--teal)'}}/>
-                  </div>
-                </div>
-              </div>
-              {/* status + buttons */}
-              <div style={{marginTop:'6px',display:'flex',gap:'6px',alignItems:'center'}}>
-                <button
-                  onClick={captureAndRead}
-                  disabled={reading}
-                  style={{
-                    flex:1,padding:'10px',background:reading?'var(--teal-dark)':'transparent',
-                    border:'2px solid '+(reading?'var(--amber)':'var(--teal)'),
-                    color:reading?'var(--amber)':'var(--teal)',
-                    fontFamily:'Orbitron,monospace',fontWeight:700,
-                    fontSize:'clamp(9px,2vw,12px)',letterSpacing:'.15em',cursor:reading?'default':'pointer',
-                    animation:reading?'sPulse 1s ease-in-out infinite':'none',
-                  }}>
-                  {reading?'READING...':'[ IDENTIFY LABEL ]'}
-                </button>
-                <button onClick={stopCam} style={{padding:'10px 12px',background:'transparent',border:'1px solid var(--border)',color:'var(--text-dim)',fontFamily:'Share Tech Mono,monospace',fontSize:'clamp(8px,1.8vw,10px)',cursor:'pointer',letterSpacing:'.08em'}}>
-                  CANCEL
-                </button>
-              </div>
-              {ocrStatus&&(
-                <div style={{marginTop:'6px',padding:'6px 10px',fontSize:'clamp(8px,1.8vw,10px)',letterSpacing:'.1em',
-                  color:ocrStatus.startsWith('IDENTIFIED')?'var(--green)':ocrStatus.startsWith('NO MATCH')||ocrStatus.includes('ERROR')?'var(--amber)':'var(--teal)',
-                  border:'1px solid var(--border)',background:'var(--bg3)'}}>
-                  {ocrStatus}
-                </div>
-              )}
-              <div style={{marginTop:'6px',fontSize:'clamp(7px,1.5vw,9px)',color:'var(--text-dim)',letterSpacing:'.06em',textAlign:'center'}}>
-                HOLD LABEL FLAT IN FRAME — TAP IDENTIFY — OR PICK BELOW
-              </div>
-            </div>
-          )}
-          {/* Picker grid as fallback */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',marginTop:'8px'}}>
-            {PICKER_ITEMS.map(item=>(
-              <div key={item.id} onClick={()=>handlePick(item)}
-                style={{cursor:'pointer',padding:'6px',border:'1px solid '+(selected===item.id?item.col:'var(--border)'),background:selected===item.id?'rgba(0,229,204,0.1)':'var(--bg3)',transition:'all .1s'}}>
-                <div style={{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:'clamp(7px,1.8vw,10px)',color:item.col,letterSpacing:'.05em'}}>{item.label}</div>
-                <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:'clamp(6px,1.4vw,8px)',color:'var(--text-dim)',marginTop:'1px'}}>{item.sub}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {mode==='pick'&&(
-        <div>
-          <div style={{fontSize:'clamp(8px,1.8vw,9px)',color:'var(--text-dim)',letterSpacing:'.1em',marginBottom:'8px',textAlign:'center'}}>
-            TAP THE ITEM YOU ARE HOLDING
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'5px',maxHeight:'55vh',overflowY:'auto'}}>
-            {PICKER_ITEMS.map(item=>(
-              <div key={item.id} onClick={()=>handlePick(item)}
-                style={{cursor:'pointer',padding:'8px 6px',border:'1px solid '+(selected===item.id?item.col:'var(--border)'),background:selected===item.id?'rgba(0,229,204,0.08)':'var(--bg2)',transition:'all .15s'}}>
-                <div style={{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:'clamp(8px,2vw,10px)',color:item.col,letterSpacing:'.06em',marginBottom:'2px'}}>{item.label}</div>
-                <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:'clamp(7px,1.5vw,8px)',color:'var(--text-dim)',letterSpacing:'.04em'}}>{item.sub}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {mode==='qr'&&(
-        <div>
-          <button className={'scan-btn'+(scanning?' scanning':'')} onClick={()=>scanning?stopQR():startQR()}>
-            {scanning?'[ SCANNING — TAP TO CANCEL ]':'[ INITIATE QR SCAN ]'}
-          </button>
-          {scanning&&<div id="qr-reader" ref={qrRef} style={{marginTop:'8px'}}/>}
-        </div>
-      )}
-
-      <div className="manual-entry" style={{marginTop:'8px'}}>
-        <input className="manual-input" placeholder="ITEM CODE — e.g. ALT-MGC-001"
-          value={manual} onChange={e=>setManual(e.target.value)}
-          onKeyDown={e=>e.key==='Enter'&&doManual()}/>
-        <button className="manual-btn" onClick={doManual}>ENTER</button>
-      </div>
+      <button className={'scan-btn'+(scanning?' scanning':'')} onClick={()=>scanning?stopQR():startQR()}>
+        {scanning?'[ SCANNING — TAP TO CANCEL ]':'[ INITIATE QR SCAN ]'}
+      </button>
+      {scanning&&<div id="qr-reader" ref={qrRef} style={{marginTop:'8px'}}/>}
     </div>
   );
 }
@@ -1311,7 +1124,15 @@ function App(){
   const showNotif=(msg,type='normal',dur=3000)=>{setNotif({msg,type});setTimeout(()=>setNotif(null),dur)};
 
   const processItem=useCallback((code)=>{
-    const t=code.trim().toUpperCase();
+    let raw=code.trim();
+    // If the QR code is a URL, extract the item ID from ?item= or the last path segment
+    try{
+      const url=new URL(raw);
+      const p=url.searchParams.get('item')||url.searchParams.get('id');
+      if(p) raw=p.trim();
+      else { const seg=url.pathname.split('/').filter(Boolean); if(seg.length) raw=seg[seg.length-1]; }
+    }catch(e){}
+    const t=raw.toUpperCase();
     const item=ITEMS[t];
     if(!item){showNotif(`UNKNOWN ITEM: ${t}`,'err');setCurItem({unknown:true,code:t});return}
     const isNew=!scanned[t];
