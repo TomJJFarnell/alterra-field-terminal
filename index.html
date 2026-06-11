@@ -1129,17 +1129,12 @@ function App(){
 
   const processItem=useCallback((code)=>{
     let raw=code.trim();
-    // QR codes encode "ALT-XXX-001 | ..." — take the part before the first pipe
-    if(raw.includes('|')) raw=raw.split('|')[0].trim();
-    // Also handle full URLs with ?item= param
-    try{
-      const url=new URL(raw);
-      const p=url.searchParams.get('item')||url.searchParams.get('id');
-      if(p) raw=p.trim();
-    }catch(e){}
+    // Extract ALT-XXXX-001 from anywhere in the string
+    const m=raw.match(/ALT-[A-Z0-9]+-[0-9]+/i);
+    if(m) raw=m[0];
     const t=raw.toUpperCase();
     const item=ITEMS[t];
-    if(!item){showNotif(`T:[${t}]`,'err');setCurItem({unknown:true,code:t});return}
+    if(!item){showNotif(`UNKNOWN: ${t}`,'err');setCurItem({unknown:true,code:t});return}
     const isNew=!scanned[t];
     const ns={...scanned,[t]:true};
     setScanned(ns);saveScanned(ns);setCurItem(item);
