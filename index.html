@@ -274,7 +274,11 @@ const unlockAudio = () => {
   crashFiles.forEach(name => {
     const a = new Audio(`sounds/${name}.mp3`);
     if(name === 'alarm-loop'){ a.loop = true; a.volume = 0.7; alarmAudio = a; }
-    else { a.volume = 0; a.play().catch(()=>{}); audioPool[name] = a; }
+    else {
+      // Play then immediately pause — unlocks the element on iOS without audible sound
+      a.play().then(()=>{ a.pause(); a.currentTime=0; }).catch(()=>{});
+      audioPool[name] = a;
+    }
   });
 };
 
@@ -1125,12 +1129,13 @@ function App(){
 
   const processItem=useCallback((code)=>{
     let raw=code.trim();
-    // If the QR code is a URL, extract the item ID from ?item= or the last path segment
+    // QR codes encode "ALT-XXX-001 | ..." — take the part before the first pipe
+    if(raw.includes('|')) raw=raw.split('|')[0].trim();
+    // Also handle full URLs with ?item= param
     try{
       const url=new URL(raw);
       const p=url.searchParams.get('item')||url.searchParams.get('id');
       if(p) raw=p.trim();
-      else { const seg=url.pathname.split('/').filter(Boolean); if(seg.length) raw=seg[seg.length-1]; }
     }catch(e){}
     const t=raw.toUpperCase();
     const item=ITEMS[t];
